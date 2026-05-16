@@ -1,0 +1,279 @@
+<!-- Home Tab (New) -->
+<div class="tab-pane fade show active" id="home" role="tabpanel">
+
+    <!-- Hero Section -->
+    <div class="hero-section rounded-4 overflow-hidden position-relative mb-5 text-white shadow-lg">
+        <div class="container-fluid py-5 px-lg-5 position-relative z-1">
+            <div class="row align-items-center">
+                <div class="col-lg-6 text-start">
+                    <span
+                        class="badge bg-white bg-opacity-10 border border-white border-opacity-25 mb-4 px-3 py-2 rounded-pill backdrop-blur text-info">
+                        <i class="bi bi-stars me-2"></i>AI-Powered Career Assistant
+                    </span>
+                    <h1 class="display-4 fw-bold mb-3 lh-tight">Unlock Your True <br /> Career Potential</h1>
+                    <p class="lead text-white-50 mb-4" style="max-width: 90%;">
+                        Stop guessing. Let our Knowledge Graph analyze your CV and match you with the perfect
+                        opportunities instantly.
+                    </p>
+                    <div class="d-flex gap-3">
+                        <button class="btn btn-light btn-lg px-4 fw-bold text-primary shadow transition-hover"
+                            onclick="window.location.href = '{{ url_for('upload_page') }}';">
+                            <i class="bi bi-upload me-2"></i>Analyze CV
+                        </button>
+                        <button class="btn btn-outline-light btn-lg px-4 backdrop-blur"
+                            onclick="window.location.href = '{{ url_for('cv_builder') }}';">
+                            <i class="bi bi-file-earmark-text me-2"></i>Build CV
+                        </button>
+                    </div>
+                </div>
+                <div class="col-lg-6 d-none d-lg-block position-relative">
+                    <!-- Abstract Visual Visualization -->
+                    <div class="hero-visual" style="height: 350px;">
+                        <!-- Central Node -->
+                        <div class="position-absolute top-50 start-50 translate-middle bg-white p-4 rounded-circle shadow-lg text-primary d-flex align-items-center justify-content-center"
+                            style="width: 100px; height: 100px; z-index: 10;">
+                            <i class="bi bi-person-bounding-box display-4"></i>
+                        </div>
+
+                        <!-- Floating Elements -->
+                        <div class="floating-card p-3 rounded-3 bg-white text-dark shadow position-absolute d-flex align-items-center gap-3"
+                            style="top: 10%; left: 10%; animation: float 6s ease-in-out infinite;">
+                            <div class="bg-success bg-opacity-10 text-success p-2 rounded"><i
+                                    class="bi bi-check-lg"></i></div>
+                            <div>
+                                <div class="fw-bold small">High Match</div>
+                                <div class="text-xs text-muted">95% score</div>
+                            </div>
+                        </div>
+
+                        <div class="floating-card p-3 rounded-3 bg-white text-dark shadow position-absolute d-flex align-items-center gap-3"
+                            style="bottom: 15%; right: 5%; animation: float 5s ease-in-out infinite 1s;">
+                            <div class="bg-primary bg-opacity-10 text-primary p-2 rounded"><i
+                                    class="bi bi-graph-up"></i></div>
+                            <div>
+                                <div class="fw-bold small">Skill Gap</div>
+                                <div class="text-xs text-muted">Identified</div>
+                            </div>
+                        </div>
+
+                        <div class="floating-card p-3 rounded-3 bg-white text-dark shadow position-absolute d-flex align-items-center gap-3"
+                            style="top: 20%; right: 0%; animation: float 7s ease-in-out infinite 0.5s;">
+                            <div class="bg-warning bg-opacity-10 text-warning p-2 rounded"><i
+                                    class="bi bi-briefcase"></i></div>
+                            <div>
+                                <div class="fw-bold small">Senior Dev</div>
+                                <div class="text-xs text-muted">Recommended</div>
+                            </div>
+                        </div>
+
+                        <!-- Connecting Lines (SVG) -->
+                        <svg class="position-absolute top-0 start-0 w-100 h-100"
+                            style="z-index: 1; opacity: 0.3; pointer-events: none;">
+                            <path d="M80,80 Q150,150 250,175" stroke="white" stroke-width="2" fill="none"
+                                stroke-dasharray="5,5" />
+                            <path d="M450,100 Q350,150 250,175" stroke="white" stroke-width="2" fill="none"
+                                stroke-dasharray="5,5" />
+                            <path d="M420,280 Q350,220 250,175" stroke="white" stroke-width="2" fill="none"
+                                stroke-dasharray="5,5" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dynamic Background -->
+        <div class="position-absolute top-0 start-0 w-100 h-100"
+            style="background: linear-gradient(135deg, var(--primary-color) 0%, #3B82F6 100%); z-index: 0;"></div>
+        <div class="position-absolute bottom-0 end-0 bg-white opacity-10 rounded-circle"
+            style="width: 400px; height: 400px; transform: translate(30%, 30%); filter: blur(50px);"></div>
+        <div class="position-absolute top-0 start-0 bg-secondary opacity-10 rounded-circle"
+            style="width: 300px; height: 300px; transform: translate(-30%, -30%); filter: blur(50px);"></div>
+    </div>
+
+    <div class="row g-4 mb-5 text-start">
+        <div class="col-md-4">
+            <div class="p-4 rounded-4 bg-white shadow-sm h-100 border border-light hover-lift transition-all">
+                <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 text-primary rounded-3 mb-3"
+                    style="width: 50px; height: 50px;">
+                    <i class="bi bi-cpu fs-4"></i>
+                </div>
+                <h5 class="fw-bold mb-2">AI-Powered Analysis</h5>
+                <p class="text-secondary small mb-0">Our advanced algorithms scan your resume against thousands of job
+                    descriptions to find your perfect fit.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-4 rounded-4 bg-white shadow-sm h-100 border border-light hover-lift transition-all">
+                <div class="d-inline-flex align-items-center justify-content-center bg-success bg-opacity-10 text-success rounded-3 mb-3"
+                    style="width: 50px; height: 50px;">
+                    <i class="bi bi-graph-up-arrow fs-4"></i>
+                </div>
+                <h5 class="fw-bold mb-2">Skill Gap Detection</h5>
+                <p class="text-secondary small mb-0">Identify missing skills that are holding you back and get
+                    personalized recommendations to bridge the gap.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-4 rounded-4 bg-white shadow-sm h-100 border border-light hover-lift transition-all">
+                <div class="d-inline-flex align-items-center justify-content-center bg-warning bg-opacity-10 text-warning rounded-3 mb-3"
+                    style="width: 50px; height: 50px;">
+                    <i class="bi bi-file-earmark-diff fs-4"></i>
+                </div>
+                <h5 class="fw-bold mb-2">Smart CV Builder</h5>
+                <p class="text-secondary small mb-0">Create professional, ATS-friendly resumes in minutes with our
+                    drag-and-drop builder and proven templates.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- How It Works -->
+    <div class="text-center mb-5 pb-3">
+        <span class="text-primary fw-bold text-uppercase small tracking-wider">Simple Process</span>
+        <h3 class="fw-bold mt-2">How It Works</h3>
+    </div>
+
+    <div class="row position-relative mb-5 justify-content-center">
+        <!-- Connecting Line -->
+        <div class="position-absolute top-50 start-0 w-100 border-top border-2 border-primary border-opacity-10 d-none d-md-block"
+            style="z-index: 0;"></div>
+
+        <div class="col-md-3 z-1 mb-3 mb-md-0">
+            <div
+                class="text-center bg-white p-4 h-100 rounded-3 shadow-sm border border-light d-flex flex-column align-items-center justify-content-center">
+                <div class="d-flex align-items-center justify-content-center bg-primary text-white rounded-circle mb-3 shadow-sm position-relative"
+                    style="width: 64px; height: 64px;">
+                    <span class="fs-4 fw-bold">1</span>
+                </div>
+                <h6 class="fw-bold">Upload CV</h6>
+                <p class="small text-muted mb-0">Upload your PDF resume</p>
+            </div>
+        </div>
+        <div class="col-md-3 z-1 mb-3 mb-md-0">
+            <div
+                class="text-center bg-white p-4 h-100 rounded-3 shadow-sm border border-light d-flex flex-column align-items-center justify-content-center">
+                <div class="d-flex align-items-center justify-content-center bg-primary text-white rounded-circle mb-3 shadow-sm position-relative"
+                    style="width: 64px; height: 64px;">
+                    <span class="fs-4 fw-bold">2</span>
+                </div>
+                <h6 class="fw-bold">AI Analysis</h6>
+                <p class="small text-muted mb-0">We extract & match skills</p>
+            </div>
+        </div>
+        <div class="col-md-3 z-1 mb-3 mb-md-0">
+            <div
+                class="text-center bg-white p-4 h-100 rounded-3 shadow-sm border border-light d-flex flex-column align-items-center justify-content-center">
+                <div class="d-flex align-items-center justify-content-center bg-primary text-white rounded-circle mb-3 shadow-sm position-relative"
+                    style="width: 64px; height: 64px;">
+                    <span class="fs-4 fw-bold">3</span>
+                </div>
+                <h6 class="fw-bold">Get Results</h6>
+                <p class="small text-muted mb-0">View matches & gaps</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-5 pb-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3 class="fw-bold mb-0">Featured Opportunities</h3>
+            <a href="{{ url_for('search_page') }}" class="text-decoration-none fw-bold">View All <i
+                    class="bi bi-arrow-right"></i></a>
+        </div>
+
+        <div class="row g-4" id="featuredJobsContainer">
+            <!-- Loading state -->
+            <div class="col-12 text-center py-5" id="featuredJobsLoading">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="text-muted mt-2">Loading opportunities...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load featured jobs on page load
+        document.addEventListener('DOMContentLoaded', function () {
+            loadFeaturedJobs();
+        });
+
+        async function loadFeaturedJobs() {
+            const container = document.getElementById('featuredJobsContainer');
+            const loading = document.getElementById('featuredJobsLoading');
+
+            try {
+                const response = await fetch('/api/featured-jobs');
+                const data = await response.json();
+
+                if (data.jobs && data.jobs.length > 0) {
+                    loading.style.display = 'none';
+                    container.innerHTML = data.jobs.map(job => {
+                        const companySeed = encodeURIComponent(job.company || 'Job');
+                        const logoUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${companySeed}&backgroundColor=3b82f6,06b6d4,8b5cf6&backgroundType=gradientLinear&fontSize=45&fontWeight=700`;
+                        
+                        return `
+                        <div class="col-md-4 mb-4">
+                            <div class="premium-job-card h-100 flex-column p-4" style="gap: 1rem;">
+                                <!-- Top Row -->
+                                <div class="d-flex justify-content-between align-items-start w-100">
+                                    <div class="premium-logo-container" style="width: 50px; height: 50px; padding: 0; background: #f1f5f9; overflow: hidden;">
+                                        <img src="${logoUrl}" alt="${job.company}" style="width: 100%; height: 100%; object-fit: cover;">
+                                    </div>
+                                    <span class="badge ${job.badge_class || 'bg-primary-soft text-primary'} px-3 py-2 rounded-pill small" style="font-size: 0.7rem;">${job.work_type}</span>
+                                </div>
+                                
+                                <div class="job-info-main d-flex flex-column flex-grow-1">
+                                    <h5 class="job-title-premium text-truncate mb-1" style="font-size: 1.1rem;" title="${job.title}">${job.title}</h5>
+                                    
+                                    <div class="company-meta mb-2">
+                                        <span class="text-dark fw-bold extra-small text-truncate" style="max-width: 150px;">${job.company}</span>
+                                        <div class="meta-divider"></div>
+                                        <span class="text-muted extra-small">${job.location}</span>
+                                    </div>
+                                    
+                                    <div class="tag-container mb-3">
+                                        ${(job.skills || []).slice(0, 2).map(skill => `<span class="premium-tag extra-small" style="padding: 0.2rem 0.5rem;"><i class="bi bi-hash"></i> ${skill}</span>`).join('')}
+                                    </div>
+                                    
+                                    <!-- Bottom Row -->
+                                    <div class="mt-auto pt-3 border-top d-flex justify-content-between align-items-center w-100">
+                                        <span class="fw-bold text-primary small">${job.salary}</span>
+                                        <div class="action-group" style="margin-top: 0; gap: 0.4rem;">
+                                            <a href="/job-detail/${job.id}" class="btn btn-premium-outline px-2 py-1 extra-small" style="min-width: 50px;">View</a>
+                                            <a href="${job.url || '#'}" target="_blank" class="btn btn-premium-fill px-2 py-1 extra-small" style="min-width: 50px;">Apply</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    }).join('');
+                } else {
+                    container.innerHTML = `
+                        <div class="col-12 text-center py-5">
+                            <i class="bi bi-briefcase text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-2">No jobs available at the moment.</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading featured jobs:', error);
+                container.innerHTML = `
+                    <div class="col-12 text-center py-5">
+                        <i class="bi bi-exclamation-circle text-danger" style="font-size: 3rem;"></i>
+                        <p class="text-muted mt-2">Failed to load jobs. Please try refreshing the page.</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+
+    <div class="text-center py-5 bg-primary bg-opacity-10 rounded-4 mb-5">
+        <h2 class="fw-bold mb-3">Ready to find your dream job?</h2>
+        <p class="text-muted mb-4 lead">Join thousands of professionals who have advanced their careers with us.</p>
+        <button class="btn btn-primary btn-lg rounded-pill px-5 shadow-sm hover-scale"
+            onclick="window.location.href = '{{ url_for('upload_page') }}';">
+            Get Started Now <i class="bi bi-arrow-right ms-2"></i>
+        </button>
+    </div>
+
+</div>

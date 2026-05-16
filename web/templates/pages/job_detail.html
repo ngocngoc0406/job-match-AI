@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .job-detail-header {
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+        color: white;
+        padding: 5rem 0; /* Trở về padding cân đối */
+        border-radius: 0 0 2rem 2rem;
+        position: relative;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .navbar {
+        z-index: 10000 !important; /* Ưu tiên cao nhất cho thanh điều hướng */
+    }
+
+    .job-detail-card {
+        background: var(--card-bg, #ffffff);
+        border-radius: 1.5rem;
+        box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.1), 0 10px 15px -10px rgba(0, 0, 0, 0.1);
+        border: 1px solid var(--border-color, rgba(0,0,0,0.05));
+        position: relative;
+        z-index: 2;
+        overflow: hidden;
+    }
+
+    .score-circle {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        font-weight: 800;
+        color: white;
+        background: conic-gradient(#10b981 0deg, #e5e7eb 0);
+        position: relative;
+        transition: background 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .score-circle::before {
+        content: "";
+        position: absolute;
+        width: 100px;
+        height: 100px;
+        background: var(--card-bg, #ffffff);
+        border-radius: 50%;
+    }
+
+    .score-value {
+        position: relative;
+        z-index: 1;
+        color: #10b981;
+        opacity: 0;
+        transform: scale(0.5);
+        transition: all 0.5s ease 1s;
+    }
+
+    .score-value.show {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    .skill-badge {
+        font-size: 0.85rem;
+        padding: 0.6rem 1.2rem;
+        border-radius: 2rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .skill-matched {
+        background-color: rgba(16, 185, 129, 0.1);
+        color: #059669;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .skill-missing-item {
+        padding: 1rem;
+        border-radius: 1rem;
+        background: rgba(239, 68, 68, 0.03);
+        border: 1px solid rgba(239, 68, 68, 0.1);
+        margin-bottom: 1rem;
+        transition: all 0.2s ease;
+    }
+
+    .skill-missing-item:hover {
+        background: rgba(239, 68, 68, 0.06);
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .tip-link {
+        color: #ef4444;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .tip-link:hover {
+        text-decoration: underline;
+    }
+
+    /* Toast Styles */
+    #toast-container {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        z-index: 9999;
+    }
+
+    .custom-toast {
+        background: #111827;
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 1rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        transform: translateY(100px);
+        opacity: 0;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .custom-toast.show {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    :root {
+        --score-track: #e5e7eb;
+    }
+
+    [data-theme="dark"] {
+        --score-track: #374151;
+    }
+
+    [data-theme="dark"] .job-detail-card,
+    [data-theme="dark"] .score-circle::before {
+        background: #1f2937;
+    }
+
+    [data-theme="dark"] .skill-missing-item {
+        background: rgba(239, 68, 68, 0.05);
+    }
+
+    /* CV Panel */
+    .cv-panel {
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 1rem;
+        background: rgba(59, 130, 246, 0.03);
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+
+    .cv-panel-header {
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(124, 58, 237, 0.08) 100%);
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .cv-text-block {
+        max-height: 380px;
+        overflow-y: auto;
+        font-size: 0.8rem;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-break: break-word;
+        padding: 1rem;
+        color: var(--text-color, #374151);
+    }
+
+    .cv-text-block::-webkit-scrollbar { width: 5px; }
+    .cv-text-block::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+    [data-theme="dark"] .cv-panel {
+        background: rgba(30, 41, 59, 0.4);
+        border-color: rgba(99, 102, 241, 0.2);
+    }
+
+    [data-theme="dark"] .cv-text-block {
+        color: #e2e8f0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="toast-container"></div>
+
+{% if error %}
+<div class="container py-5 text-center">
+    <div class="py-5">
+        <i class="bi bi-exclamation-triangle display-1 text-warning mb-4"></i>
+        <h1 class="display-4 fw-bold">{{ error }}</h1>
+        <p class="lead text-muted">The job listing you are looking for might have expired or doesn't exist.</p>
+        <a href="/results-page" class="btn btn-primary btn-lg rounded-pill px-5 mt-4">
+            <i class="bi bi-arrow-left me-2"></i> Back to Listings
+        </a>
+    </div>
+</div>
+{% else %}
+<div class="job-detail-header">
+    <div class="container">
+        <a href="/results-page" class="back-btn" style="color: rgba(255, 255, 255, 0.8); text-decoration: none;">
+            <i class="bi bi-arrow-left"></i> Back to results
+        </a>
+        <div class="row align-items-center">
+            <div class="col-lg-8">
+                <h1 class="display-5 fw-bold mb-2">{{ job.title }}</h1>
+                <div class="d-flex flex-wrap gap-3 align-items-center opacity-90">
+                    <span><i class="bi bi-building me-2"></i>{{ job.company }}</span>
+                    <span><i class="bi bi-geo-alt me-2"></i>{{ job.city }}</span>
+                    <span><i class="bi bi-briefcase me-2"></i>AI Matched Role</span>
+                </div>
+            </div>
+            <div class="col-lg-4 text-lg-end mt-4 mt-lg-0">
+                <a href="{{ job.url }}" target="_blank" class="apply-btn" style="background: white; color: #1e3a8a; padding: 1rem 2rem; border-radius: 0.75rem; font-weight: 700; text-decoration: none; display: inline-block;">
+                    Apply Now <i class="bi bi-box-arrow-up-right ms-2"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container pb-5" style="margin-top: 2.6rem;">
+    <div class="row g-4">
+        <!-- Left Side: Job Content -->
+        <div class="col-lg-6">
+            <div class="job-detail-card p-4 p-md-5">
+                <div class="mb-5">
+                    <h3 class="job-section-title d-flex align-items-center gap-2 mb-4">
+                        <i class="bi bi-file-earmark-text text-primary"></i> Job Details
+                    </h3>
+                    
+                    {% if job.description %}
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-2 text-primary small uppercase tracking-wider">Description</h6>
+                        <div class="text-muted leading-relaxed" style="white-space: pre-line;">{{ job.description }}</div>
+                    </div>
+                    {% endif %}
+
+                    {% if job.requirements %}
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-2 text-primary small uppercase tracking-wider">Requirements</h6>
+                        <div class="text-muted leading-relaxed" style="white-space: pre-line;">{{ job.requirements }}</div>
+                    </div>
+                    {% endif %}
+
+                    {% if job.benefits %}
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-2 text-primary small uppercase tracking-wider">Benefits</h6>
+                        <div class="text-muted leading-relaxed" style="white-space: pre-line;">{{ job.benefits }}</div>
+                    </div>
+                    {% endif %}
+
+                    {% if not job.description and not job.requirements %}
+                    <p class="text-muted italic">Full details are available on the application page.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: AI Analysis & Skills -->
+        <div class="col-lg-6">
+            <div class="sticky-top" style="top: 6rem; z-index: 10;">
+                <div class="job-detail-card p-4 mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h4 class="fw-bold mb-0 d-flex align-items-center gap-2">
+                            <i class="bi bi-stars text-warning"></i> AI Assessment
+                        </h4>
+                        <button id="showCvBtn" class="btn btn-sm btn-outline-info rounded-pill px-3" onclick="toggleCVPanel()">
+                            <i class="bi bi-file-person me-1"></i> Show CV
+                        </button>
+                    </div>
+
+                    <!-- CV Panel (hidden by default) -->
+                    <div id="cvPanel" class="cv-panel mb-4" style="display:none;">
+                        <div class="cv-panel-header">
+                            <span class="small fw-bold text-primary">
+                                <i class="bi bi-file-earmark-text me-1"></i>
+                                <span id="cvPanelFilename">Your CV</span>
+                            </span>
+                            <button class="btn btn-sm btn-link text-muted p-0" onclick="toggleCVPanel()">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        <div id="cvPanelText" class="cv-text-block">
+                            <div class="text-center text-muted py-3">
+                                <div class="spinner-border spinner-border-sm me-2"></div> Loading CV...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex flex-column align-items-center mb-4">
+                        <div id="scoreCircle" class="score-circle mb-3">
+                            <span id="scoreValue" class="score-value">0%</span>
+                        </div>
+                        <span class="fw-bold text-muted">Matching Confidence</span>
+                    </div>
+
+                    <div class="p-3 bg-light rounded-3 border mb-4">
+                        <h6 class="fw-bold small mb-2"><i class="bi bi-chat-left-dots text-primary me-2"></i>AI Insight</h6>
+                        <p class="small text-muted mb-0">{{ job.ai_insight }}</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between small mb-2">
+                            <span class="text-muted">Skill Coverage</span>
+                            <span class="fw-bold text-primary">{{ job.skill_coverage }}</span>
+                        </div>
+                        <div class="progress" style="height: 8px; background: rgba(0,0,0,0.05); border-radius: 4px;">
+                            <div class="progress-bar bg-primary" style="width: 0%; transition: width 1.5s ease-out; border-radius: 4px;" id="skillProgress"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold small mb-3">Matched Skills</h6>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for skill in job.matched_skills %}
+                            <span class="skill-badge skill-matched">
+                                <i class="bi bi-check-lg"></i> 
+                                {{ skill.skill if skill is mapping else skill }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold small mb-3 text-warning">Missing Skills</h6>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for item in job.missing_skills %}
+                            <span class="badge bg-light text-dark border p-2" style="font-weight: 500;">
+                                {{ item.name if item is mapping else item }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <button id="saveBtn" class="btn btn-outline-primary w-100 rounded-3 py-3 fw-bold" onclick="saveJob()">
+                        <i class="bi bi-bookmark me-2"></i> Save to My Tracker
+                    </button>
+                </div>
+
+                <!-- Learning Recommendations -->
+                <div class="job-detail-card p-4">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-mortarboard text-danger me-2"></i>Grow Your Profile</h6>
+                    <div class="row g-2">
+                        {% for item in job.missing_skills[:3] %}
+                        <div class="col-12">
+                            <div class="p-2 border rounded-3 bg-light bg-opacity-50">
+                                <div class="small fw-bold">{{ item.name if item is mapping else item }}</div>
+                                <a href="{{ item.url if item is mapping else 'https://www.google.com/search?q=learn+' + item + '+online' }}" target="_blank" class="extra-small text-danger text-decoration-none">
+                                    Recommended Course <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Show CV Toggle ──
+let cvLoaded = false;
+
+async function toggleCVPanel() {
+    const panel = document.getElementById('cvPanel');
+    const btn = document.getElementById('showCvBtn');
+    const textEl = document.getElementById('cvPanelText');
+    const filenameEl = document.getElementById('cvPanelFilename');
+
+    const isHidden = panel.style.display === 'none';
+    panel.style.display = isHidden ? 'block' : 'none';
+    btn.innerHTML = isHidden
+        ? '<i class="bi bi-eye-slash me-1"></i> Hide CV'
+        : '<i class="bi bi-file-person me-1"></i> Show CV';
+
+    if (isHidden && !cvLoaded) {
+        cvLoaded = true;
+        try {
+            const res = await fetch('/api/cv-full');
+            const data = await res.json();
+            if (data.active && data.cv_text) {
+                filenameEl.textContent = data.filename || 'Your CV';
+                textEl.textContent = data.cv_text;
+            } else {
+                textEl.innerHTML = '<div class="text-center text-warning py-3"><i class="bi bi-exclamation-triangle me-1"></i>No CV uploaded yet.</div>';
+            }
+        } catch (e) {
+            textEl.innerHTML = '<div class="text-center text-danger py-3"><i class="bi bi-x-circle me-1"></i>Failed to load CV.</div>';
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Animate Score Circle
+    const targetScore = {{ (job.score * 100) | round | int }};
+    const circle = document.getElementById('scoreCircle');
+    const valueTxt = document.getElementById('scoreValue');
+    const progress = document.getElementById('skillProgress');
+    
+    setTimeout(() => {
+        circle.style.background = `conic-gradient(#10b981 ${targetScore * 3.6}deg, var(--score-track) 0)`;
+        valueTxt.innerText = targetScore + '%';
+        valueTxt.classList.add('show');
+        progress.style.width = '{{ job.skill_coverage }}';
+    }, 300);
+});
+
+function showToast(message, icon = 'bi-check-circle-fill') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'custom-toast';
+    toast.innerHTML = `<i class="bi ${icon} text-success"></i> <span>${message}</span>`;
+    container.appendChild(toast);
+    
+    setTimeout(() => toast.classList.add('show'), 100);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 400);
+    }, 3000);
+}
+
+function saveJob() {
+    const btn = document.getElementById('saveBtn');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Saving...';
+
+    const jobData = {
+        title: "{{ job.title }}",
+        company: "{{ job.company }}",
+        loc: "{{ job.city }}",
+        status: 'saved',
+        job_id: "{{ job.id }}",
+        url: "{{ job.url }}"
+    };
+    
+    fetch('/api/kanban/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(jobData)
+    })
+    .then(async res => {
+        if (!res.ok) throw new Error('Failed to save');
+        return res.json();
+    })
+    .then(data => {
+        btn.innerHTML = '<i class="bi bi-check-lg me-2"></i> Saved!';
+        showToast('Job successfully added to your tracker!');
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }, 2000);
+    })
+    .catch(err => {
+        console.error(err);
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+        showToast('Error saving job', 'bi-x-circle-fill');
+    });
+}
+</script>
+{% endif %}
+{% endblock %}

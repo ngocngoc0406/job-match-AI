@@ -1,0 +1,879 @@
+<!-- CV Builder Tab - Premium Modern Design -->
+<div class="tab-pane fade" id="cv-builder" role="tabpanel">
+    <!-- Hero Header -->
+    <div class="cv-builder-hero text-center py-5 mb-4 rounded-4"
+        style="background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);">
+        <div class="container">
+            <h2 class="text-white fw-bold mb-2">
+                <i class="bi bi-file-earmark-person me-2"></i>AI-Powered CV Builder
+            </h2>
+            <p class="text-white-50 mb-0">Create a professional resume in minutes • ATS-friendly templates</p>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Editor Column -->
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-lg rounded-4 sticky-top" style="top: 100px;">
+                <div class="card-header bg-white border-0 pt-4 px-4">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <h5 class="fw-bold mb-0">
+                            <i class="bi bi-pencil-square text-primary me-2"></i>CV Editor
+                        </h5>
+                        <div class="d-flex gap-2 align-items-center">
+                            <button class="btn btn-sm btn-outline-primary rounded-pill px-3"
+                                onclick="autoFillCVBuilder();" title="Fill form with your uploaded CV data">
+                                <i class="bi bi-magic me-1"></i>Auto-fill from CV
+                            </button>
+                            <span class="badge bg-success-soft text-success rounded-pill px-3 py-2">
+                                <i class="bi bi-check-circle me-1"></i>Auto-saving
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-4" style="max-height: 70vh; overflow-y: auto;">
+                    <div class="accordion accordion-flush" id="cvAccordion">
+                        <!-- Personal Info -->
+                        <div class="accordion-item border-0 mb-3">
+                            <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button py-3 fw-semibold" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#accPersonal"
+                                        style="background: linear-gradient(90deg, #f8f9ff 0%, #fff 100%);">
+                                        <span class="d-flex align-items-center">
+                                            <span class="icon-circle bg-primary text-white me-3">
+                                                <i class="bi bi-person-fill"></i>
+                                            </span>
+                                            Personal Information
+                                        </span>
+                                    </button>
+                                </h2>
+                                <div id="accPersonal" class="accordion-collapse collapse show"
+                                    data-bs-parent="#cvAccordion">
+                                    <div class="accordion-body pt-0">
+                                        <div class="mb-3">
+                                            <label class="form-label small fw-semibold text-muted text-uppercase">Full
+                                                Name</label>
+                                            <input type="text"
+                                                class="form-control form-control-lg border-0 bg-light rounded-3"
+                                                id="cvName" oninput="updateCV();" value="Nguyen Van A"
+                                                placeholder="Enter your full name">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label small fw-semibold text-muted text-uppercase">Job
+                                                Title</label>
+                                            <input type="text"
+                                                class="form-control form-control-lg border-0 bg-light rounded-3"
+                                                id="cvTitle" oninput="updateCV();" value="Software Engineer"
+                                                placeholder="e.g. Senior Developer">
+                                        </div>
+                                        <div class="row g-3">
+                                            <div class="col-6">
+                                                <label
+                                                    class="form-label small fw-semibold text-muted text-uppercase">Email</label>
+                                                <div class="input-group">
+                                                    <span class="input-group-text border-0 bg-light"><i
+                                                            class="bi bi-envelope text-muted"></i></span>
+                                                    <input type="email"
+                                                        class="form-control border-0 bg-light rounded-end-3"
+                                                        id="cvEmail" oninput="updateCV();" value="nguyenvan@email.com">
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <label
+                                                    class="form-label small fw-semibold text-muted text-uppercase">Phone</label>
+                                                <div class="input-group">
+                                                    <span class="input-group-text border-0 bg-light"><i
+                                                            class="bi bi-phone text-muted"></i></span>
+                                                    <input type="text"
+                                                        class="form-control border-0 bg-light rounded-end-3"
+                                                        id="cvPhone" oninput="updateCV();" value="0901234567">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row g-3 mt-1">
+                                            <div class="col-6">
+                                                <label
+                                                    class="form-label small fw-semibold text-muted text-uppercase">LinkedIn</label>
+                                                <div class="input-group">
+                                                    <span class="input-group-text border-0 bg-light"><i
+                                                            class="bi bi-linkedin text-muted"></i></span>
+                                                    <input type="text"
+                                                        class="form-control border-0 bg-light rounded-end-3"
+                                                        id="cvLinkedin" oninput="updateCV();"
+                                                        placeholder="linkedin.com/in/username">
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <label
+                                                    class="form-label small fw-semibold text-muted text-uppercase">Location</label>
+                                                <div class="input-group">
+                                                    <span class="input-group-text border-0 bg-light"><i
+                                                            class="bi bi-geo-alt text-muted"></i></span>
+                                                    <input type="text"
+                                                        class="form-control border-0 bg-light rounded-end-3"
+                                                        id="cvLocation" oninput="updateCV();" value="Ho Chi Minh City">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Summary -->
+                        <div class="accordion-item border-0 mb-3">
+                            <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed py-3 fw-semibold" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#accSummary"
+                                        style="background: linear-gradient(90deg, #f8f9ff 0%, #fff 100%);">
+                                        <span class="d-flex align-items-center">
+                                            <span class="icon-circle bg-info text-white me-3">
+                                                <i class="bi bi-chat-quote-fill"></i>
+                                            </span>
+                                            Professional Summary
+                                        </span>
+                                    </button>
+                                </h2>
+                                <div id="accSummary" class="accordion-collapse collapse" data-bs-parent="#cvAccordion">
+                                    <div class="accordion-body pt-0">
+                                        <label class="form-label small fw-semibold text-muted text-uppercase">About
+                                            You</label>
+                                        <textarea class="form-control border-0 bg-light rounded-3" id="cvSummary"
+                                            rows="4" oninput="updateCV();"
+                                            placeholder="Write a compelling summary of your professional background...">Experienced software engineer with 5+ years of expertise in AI, machine learning, and full-stack development. Passionate about building scalable web applications and leading high-performance teams.</textarea>
+                                        <div class="d-flex align-items-center mt-2">
+                                            <small class="text-muted"><i class="bi bi-lightbulb me-1"></i>Pro tip: Keep
+                                                it under 3 sentences</small>
+                                            <button class="btn btn-sm btn-outline-primary ms-auto"
+                                                onclick="showToast('AI', 'AI enhancement coming soon!');">
+                                                <i class="bi bi-stars me-1"></i>AI Enhance
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Experience -->
+                        <div class="accordion-item border-0 mb-3">
+                            <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed py-3 fw-semibold" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#accExp"
+                                        style="background: linear-gradient(90deg, #f8f9ff 0%, #fff 100%);">
+                                        <span class="d-flex align-items-center">
+                                            <span class="icon-circle bg-success text-white me-3">
+                                                <i class="bi bi-briefcase-fill"></i>
+                                            </span>
+                                            Work Experience
+                                        </span>
+                                    </button>
+                                </h2>
+                                <div id="accExp" class="accordion-collapse collapse" data-bs-parent="#cvAccordion">
+                                    <div class="accordion-body pt-0">
+                                        <div class="experience-entry p-3 bg-light rounded-3 mb-3">
+                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                                <span class="badge bg-primary-soft text-primary">Current Position</span>
+                                                <button class="btn btn-sm btn-link text-danger p-0"><i
+                                                        class="bi bi-trash"></i></button>
+                                            </div>
+                                            <div class="mb-2">
+                                                <input type="text" class="form-control border-0 bg-white fw-bold"
+                                                    id="cvExpRole" oninput="updateCV();" value="Senior Developer"
+                                                    placeholder="Position Title">
+                                            </div>
+                                            <div class="mb-2">
+                                                <input type="text" class="form-control border-0 bg-white"
+                                                    id="cvExpCompany" oninput="updateCV();" value="Tech Solutions Inc."
+                                                    placeholder="Company Name">
+                                            </div>
+                                            <div class="row g-2 mb-2">
+                                                <div class="col-6">
+                                                    <input type="text"
+                                                        class="form-control form-control-sm border-0 bg-white"
+                                                        placeholder="Start Date" value="Jan 2020">
+                                                </div>
+                                                <div class="col-6">
+                                                    <input type="text"
+                                                        class="form-control form-control-sm border-0 bg-white"
+                                                        placeholder="End Date" value="Present">
+                                                </div>
+                                            </div>
+                                            <textarea class="form-control border-0 bg-white" id="cvExpDesc" rows="3"
+                                                oninput="updateCV();"
+                                                placeholder="Describe your responsibilities and achievements...">• Led a team of 5 developers to deliver enterprise solutions
+• Implemented CI/CD pipelines reducing deployment time by 60%
+• Architected microservices handling 1M+ daily requests</textarea>
+                                        </div>
+                                        <button class="btn btn-outline-primary w-100 rounded-pill"
+                                            onclick="showToast('Feature', 'Multi-entry experience coming soon!');">
+                                            <i class="bi bi-plus-circle me-2"></i>Add Another Position
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Education -->
+                        <div class="accordion-item border-0 mb-3">
+                            <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed py-3 fw-semibold" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#accEdu"
+                                        style="background: linear-gradient(90deg, #f8f9ff 0%, #fff 100%);">
+                                        <span class="d-flex align-items-center">
+                                            <span class="icon-circle bg-warning text-white me-3">
+                                                <i class="bi bi-mortarboard-fill"></i>
+                                            </span>
+                                            Education
+                                        </span>
+                                    </button>
+                                </h2>
+                                <div id="accEdu" class="accordion-collapse collapse" data-bs-parent="#cvAccordion">
+                                    <div class="accordion-body pt-0">
+                                        <div class="education-entry p-3 bg-light rounded-3 mb-3">
+                                            <div class="mb-2">
+                                                <input type="text" class="form-control border-0 bg-white fw-bold"
+                                                    id="cvEduSchool" oninput="updateCV();"
+                                                    value="Ho Chi Minh University of Technology"
+                                                    placeholder="University/School">
+                                            </div>
+                                            <div class="mb-2">
+                                                <input type="text" class="form-control border-0 bg-white"
+                                                    id="cvEduMajor" oninput="updateCV();"
+                                                    value="Bachelor of Computer Science" placeholder="Degree & Major">
+                                            </div>
+                                            <div class="row g-2">
+                                                <div class="col-6">
+                                                    <input type="text"
+                                                        class="form-control form-control-sm border-0 bg-white"
+                                                        placeholder="Graduation Year" value="2019">
+                                                </div>
+                                                <div class="col-6">
+                                                    <input type="text"
+                                                        class="form-control form-control-sm border-0 bg-white"
+                                                        placeholder="GPA (Optional)" value="3.8/4.0">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button class="btn btn-outline-primary w-100 rounded-pill"
+                                            onclick="showToast('Feature', 'Multi-entry education coming soon!');">
+                                            <i class="bi bi-plus-circle me-2"></i>Add Another Education
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Skills -->
+                        <div class="accordion-item border-0 mb-3">
+                            <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed py-3 fw-semibold" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#accSkills"
+                                        style="background: linear-gradient(90deg, #f8f9ff 0%, #fff 100%);">
+                                        <span class="d-flex align-items-center">
+                                            <span class="icon-circle bg-danger text-white me-3">
+                                                <i class="bi bi-lightning-fill"></i>
+                                            </span>
+                                            Skills
+                                        </span>
+                                    </button>
+                                </h2>
+                                <div id="accSkills" class="accordion-collapse collapse" data-bs-parent="#cvAccordion">
+                                    <div class="accordion-body pt-0">
+                                        <label class="form-label small fw-semibold text-muted text-uppercase">Your
+                                            Skills</label>
+                                        <textarea class="form-control border-0 bg-light rounded-3" id="cvSkills"
+                                            rows="3" oninput="updateCV();"
+                                            placeholder="e.g. Python, JavaScript, React, AWS...">Python, JavaScript, React, Node.js, AWS, Docker, PostgreSQL, Machine Learning, TensorFlow, Git</textarea>
+                                        <small class="text-muted mt-2 d-block"><i
+                                                class="bi bi-info-circle me-1"></i>Separate skills with commas</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="card-footer bg-white border-0 p-4">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary btn-lg rounded-pill fw-bold" onclick="downloadCV();"
+                            id="downloadPdfBtn">
+                            <i class="bi bi-download me-2"></i>Download PDF
+                        </button>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <button class="btn btn-outline-secondary w-100 rounded-pill"
+                                    onclick="showToast('Template', 'More templates coming soon!');">
+                                    <i class="bi bi-palette me-1"></i>Templates
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button class="btn btn-outline-secondary w-100 rounded-pill"
+                                    onclick="showToast('Share', 'Sharing feature coming soon!');">
+                                    <i class="bi bi-share me-1"></i>Share
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview Column -->
+        <div class="col-lg-7">
+            <div class="preview-header d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0"><i class="bi bi-eye me-2 text-primary"></i>Live Preview</h5>
+                <div class="btn-group btn-group-sm" role="group" id="templateSelector">
+                    <button type="button" class="btn btn-outline-secondary active"
+                        onclick="switchTemplate('modern');">Modern</button>
+                    <button type="button" class="btn btn-outline-secondary"
+                        onclick="switchTemplate('classic');">Classic</button>
+                    <button type="button" class="btn btn-outline-secondary"
+                        onclick="switchTemplate('creative');">Creative</button>
+                </div>
+            </div>
+
+            <div class="cv-preview-wrapper p-4 rounded-4"
+                style="background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 100%);">
+
+                <!-- ===================== MODERN TEMPLATE ===================== -->
+                <div class="cv-template cv-template-modern shadow-lg bg-white mx-auto" id="templateModern"
+                    style="width: 100%; max-width: 600px; min-height: 800px; border-radius: 8px; overflow: hidden;">
+
+                    <div class="cv-header text-white p-4 position-relative"
+                        style="background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);">
+                        <div class="position-absolute"
+                            style="top: 0; right: 0; width: 150px; height: 150px; background: rgba(255,255,255,0.1); border-radius: 0 0 0 100%;">
+                        </div>
+                        <h2 class="fw-bold mb-1 position-relative prev-name">Nguyen Van A</h2>
+                        <p class="lead mb-3 opacity-75 position-relative prev-title">Software Engineer</p>
+                        <div class="d-flex flex-wrap gap-3 small position-relative">
+                            <span><i class="bi bi-envelope me-1"></i><span
+                                    class="prev-email">nguyenvan@email.com</span></span>
+                            <span><i class="bi bi-phone me-1"></i><span class="prev-phone">0901234567</span></span>
+                            <span><i class="bi bi-geo-alt me-1"></i><span class="prev-location">Ho Chi Minh
+                                    City</span></span>
+                        </div>
+                    </div>
+
+                    <div class="cv-body p-4">
+                        <div class="cv-section mb-4">
+                            <h5 class="fw-bold text-uppercase mb-3 d-flex align-items-center"
+                                style="color: #667eea; font-size: 14px; letter-spacing: 1px;">
+                                <span class="section-line me-2"
+                                    style="width: 30px; height: 3px; background: linear-gradient(90deg, #667eea, #764ba2); display: inline-block;"></span>
+                                Professional Summary
+                            </h5>
+                            <p class="prev-summary text-secondary mb-0" style="line-height: 1.7;">Experienced software
+                                engineer with 5+ years of expertise in AI, machine learning, and full-stack development.
+                            </p>
+                        </div>
+                        <div class="cv-section mb-4">
+                            <h5 class="fw-bold text-uppercase mb-3 d-flex align-items-center"
+                                style="color: #667eea; font-size: 14px; letter-spacing: 1px;">
+                                <span class="section-line me-2"
+                                    style="width: 30px; height: 3px; background: linear-gradient(90deg, #667eea, #764ba2); display: inline-block;"></span>
+                                Work Experience
+                            </h5>
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h6 class="fw-bold mb-0 prev-exp-role">Senior Developer</h6>
+                                <span class="badge bg-light text-dark small">Jan 2020 - Present</span>
+                            </div>
+                            <div class="text-primary fw-semibold small mb-2 prev-exp-company">Tech Solutions Inc.</div>
+                            <div class="text-secondary small prev-exp-desc" style="line-height: 1.7;">• Led a team of 5
+                                developers</div>
+                        </div>
+                        <div class="cv-section mb-4">
+                            <h5 class="fw-bold text-uppercase mb-3 d-flex align-items-center"
+                                style="color: #667eea; font-size: 14px; letter-spacing: 1px;">
+                                <span class="section-line me-2"
+                                    style="width: 30px; height: 3px; background: linear-gradient(90deg, #667eea, #764ba2); display: inline-block;"></span>
+                                Education
+                            </h5>
+                            <h6 class="fw-bold mb-0 prev-edu-school">Ho Chi Minh University of Technology</h6>
+                            <div class="text-primary small prev-edu-major">Bachelor of Computer Science</div>
+                        </div>
+                        <div class="cv-section">
+                            <h5 class="fw-bold text-uppercase mb-3 d-flex align-items-center"
+                                style="color: #667eea; font-size: 14px; letter-spacing: 1px;">
+                                <span class="section-line me-2"
+                                    style="width: 30px; height: 3px; background: linear-gradient(90deg, #667eea, #764ba2); display: inline-block;"></span>
+                                Skills
+                            </h5>
+                            <div class="d-flex flex-wrap gap-2 prev-skills">
+                                <span class="badge rounded-pill px-3 py-2"
+                                    style="background: rgba(102, 126, 234, 0.1); color: #667eea;">Python</span>
+                                <span class="badge rounded-pill px-3 py-2"
+                                    style="background: rgba(102, 126, 234, 0.1); color: #667eea;">JavaScript</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================== CLASSIC TEMPLATE ===================== -->
+                <div class="cv-template cv-template-classic shadow-lg bg-white mx-auto d-none" id="templateClassic"
+                    style="width: 100%; max-width: 600px; min-height: 800px; border-radius: 8px; overflow: hidden;">
+
+                    <div class="cv-header text-center p-4 border-bottom" style="background: #f8f9fa;">
+                        <h2 class="fw-bold mb-1 text-dark prev-name" style="font-family: Georgia, serif;">Nguyen Van A
+                        </h2>
+                        <p class="text-muted mb-2 prev-title" style="font-family: Georgia, serif; font-style: italic;">
+                            Software Engineer</p>
+                        <div class="d-flex justify-content-center gap-4 small text-muted">
+                            <span><i class="bi bi-envelope me-1"></i><span
+                                    class="prev-email">nguyenvan@email.com</span></span>
+                            <span><i class="bi bi-phone me-1"></i><span class="prev-phone">0901234567</span></span>
+                            <span><i class="bi bi-geo-alt me-1"></i><span class="prev-location">Ho Chi Minh
+                                    City</span></span>
+                        </div>
+                    </div>
+
+                    <div class="cv-body p-4">
+                        <div class="cv-section mb-4">
+                            <h5 class="fw-bold border-bottom pb-2 mb-3"
+                                style="font-family: Georgia, serif; color: #333;">PROFESSIONAL SUMMARY</h5>
+                            <p class="prev-summary text-secondary" style="line-height: 1.8; text-align: justify;">
+                                Experienced software engineer with 5+ years of expertise in AI, machine learning, and
+                                full-stack development.</p>
+                        </div>
+                        <div class="cv-section mb-4">
+                            <h5 class="fw-bold border-bottom pb-2 mb-3"
+                                style="font-family: Georgia, serif; color: #333;">WORK EXPERIENCE</h5>
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between">
+                                    <h6 class="fw-bold mb-0 prev-exp-role">Senior Developer</h6>
+                                    <span class="text-muted small fst-italic">Jan 2020 - Present</span>
+                                </div>
+                                <div class="text-muted fst-italic prev-exp-company">Tech Solutions Inc.</div>
+                                <p class="prev-exp-desc small mt-2 text-secondary" style="line-height: 1.7;">• Led a
+                                    team of 5 developers to deliver enterprise solutions</p>
+                            </div>
+                        </div>
+                        <div class="cv-section mb-4">
+                            <h5 class="fw-bold border-bottom pb-2 mb-3"
+                                style="font-family: Georgia, serif; color: #333;">EDUCATION</h5>
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h6 class="fw-bold mb-0 prev-edu-school">Ho Chi Minh University of Technology</h6>
+                                    <div class="text-muted fst-italic prev-edu-major">Bachelor of Computer Science</div>
+                                </div>
+                                <span class="text-muted small">2019</span>
+                            </div>
+                        </div>
+                        <div class="cv-section">
+                            <h5 class="fw-bold border-bottom pb-2 mb-3"
+                                style="font-family: Georgia, serif; color: #333;">SKILLS</h5>
+                            <div class="prev-skills text-secondary" style="line-height: 1.8;">Python • JavaScript •
+                                React • Node.js • AWS • Docker</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===================== CREATIVE TEMPLATE ===================== -->
+                <div class="cv-template cv-template-creative shadow-lg mx-auto d-none" id="templateCreative"
+                    style="width: 100%; max-width: 600px; min-height: 800px; border-radius: 16px; overflow: hidden;">
+
+                    <div class="row g-0 h-100">
+                        <!-- Sidebar -->
+                        <div class="col-4 text-white p-4 d-flex flex-column"
+                            style="background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);">
+                            <div class="text-center mb-4">
+                                <div class="rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center"
+                                    style="width: 80px; height: 80px; background: linear-gradient(135deg, #e94560, #ff6b6b);">
+                                    <span class="fw-bold fs-3 text-white">NA</span>
+                                </div>
+                                <h5 class="fw-bold mb-1 prev-name">Nguyen Van A</h5>
+                                <p class="small opacity-75 prev-title">Software Engineer</p>
+                            </div>
+
+                            <div class="mb-4">
+                                <h6 class="text-uppercase small fw-bold mb-3"
+                                    style="color: #e94560; letter-spacing: 2px;">Contact</h6>
+                                <div class="small opacity-75 mb-2"><i class="bi bi-envelope me-2"></i><span
+                                        class="prev-email">nguyenvan@email.com</span></div>
+                                <div class="small opacity-75 mb-2"><i class="bi bi-phone me-2"></i><span
+                                        class="prev-phone">0901234567</span></div>
+                                <div class="small opacity-75"><i class="bi bi-geo-alt me-2"></i><span
+                                        class="prev-location">Ho Chi Minh City</span></div>
+                            </div>
+
+                            <div class="mb-4">
+                                <h6 class="text-uppercase small fw-bold mb-3"
+                                    style="color: #e94560; letter-spacing: 2px;">Skills</h6>
+                                <div class="prev-skills-creative">
+                                    <div class="mb-2">
+                                        <div class="small opacity-75 mb-1">Python</div>
+                                        <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);">
+                                            <div class="progress-bar"
+                                                style="width: 90%; background: linear-gradient(90deg, #e94560, #ff6b6b);">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-2">
+                                        <div class="small opacity-75 mb-1">JavaScript</div>
+                                        <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);">
+                                            <div class="progress-bar"
+                                                style="width: 85%; background: linear-gradient(90deg, #e94560, #ff6b6b);">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mb-2">
+                                        <div class="small opacity-75 mb-1">React</div>
+                                        <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);">
+                                            <div class="progress-bar"
+                                                style="width: 80%; background: linear-gradient(90deg, #e94560, #ff6b6b);">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Main Content -->
+                        <div class="col-8 bg-white p-4">
+                            <div class="mb-4">
+                                <h5 class="fw-bold mb-3 d-flex align-items-center" style="color: #1a1a2e;">
+                                    <span
+                                        class="me-2 rounded-circle d-inline-flex align-items-center justify-content-center"
+                                        style="width: 28px; height: 28px; background: linear-gradient(135deg, #e94560, #ff6b6b);">
+                                        <i class="bi bi-person-fill text-white small"></i>
+                                    </span>
+                                    About Me
+                                </h5>
+                                <p class="prev-summary text-secondary small" style="line-height: 1.8;">Experienced
+                                    software engineer with 5+ years of expertise in AI, machine learning, and full-stack
+                                    development.</p>
+                            </div>
+
+                            <div class="mb-4">
+                                <h5 class="fw-bold mb-3 d-flex align-items-center" style="color: #1a1a2e;">
+                                    <span
+                                        class="me-2 rounded-circle d-inline-flex align-items-center justify-content-center"
+                                        style="width: 28px; height: 28px; background: linear-gradient(135deg, #e94560, #ff6b6b);">
+                                        <i class="bi bi-briefcase-fill text-white small"></i>
+                                    </span>
+                                    Experience
+                                </h5>
+                                <div class="position-relative ps-4 border-start border-2"
+                                    style="border-color: #e94560 !important;">
+                                    <div class="position-absolute"
+                                        style="left: -6px; top: 0; width: 12px; height: 12px; background: #e94560; border-radius: 50%;">
+                                    </div>
+                                    <h6 class="fw-bold mb-0 prev-exp-role">Senior Developer</h6>
+                                    <div class="text-muted small prev-exp-company">Tech Solutions Inc. • Jan 2020 -
+                                        Present</div>
+                                    <p class="prev-exp-desc small text-secondary mt-2" style="line-height: 1.7;">• Led a
+                                        team of 5 developers</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h5 class="fw-bold mb-3 d-flex align-items-center" style="color: #1a1a2e;">
+                                    <span
+                                        class="me-2 rounded-circle d-inline-flex align-items-center justify-content-center"
+                                        style="width: 28px; height: 28px; background: linear-gradient(135deg, #e94560, #ff6b6b);">
+                                        <i class="bi bi-mortarboard-fill text-white small"></i>
+                                    </span>
+                                    Education
+                                </h5>
+                                <div class="position-relative ps-4 border-start border-2"
+                                    style="border-color: #e94560 !important;">
+                                    <div class="position-absolute"
+                                        style="left: -6px; top: 0; width: 12px; height: 12px; background: #e94560; border-radius: 50%;">
+                                    </div>
+                                    <h6 class="fw-bold mb-0 prev-edu-school">Ho Chi Minh University of Technology</h6>
+                                    <div class="text-muted small prev-edu-major">Bachelor of Computer Science • 2019
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .icon-circle {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+    }
+
+    .bg-primary-soft {
+        background-color: rgba(102, 126, 234, 0.15) !important;
+    }
+
+    .bg-success-soft {
+        background-color: rgba(40, 167, 69, 0.15) !important;
+    }
+
+    .accordion-button:not(.collapsed) {
+        background: linear-gradient(90deg, #f0f4ff 0%, #fff 100%) !important;
+        box-shadow: none;
+    }
+
+    [data-theme="dark"] .accordion-button:not(.collapsed),
+    .dark-mode .accordion-button:not(.collapsed) {
+        background: linear-gradient(90deg, #1e293b 0%, #111827 100%) !important;
+        color: var(--primary-color) !important;
+    }
+
+    .accordion-button:focus {
+        box-shadow: none;
+    }
+
+    .form-control:focus {
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+        border-color: #667eea;
+    }
+
+    .cv-preview-wrapper {
+        min-height: 850px;
+    }
+
+    .cv-template {
+        transition: all 0.3s ease;
+    }
+
+    #templateSelector button.active {
+        background: #667eea !important;
+        border-color: #667eea !important;
+        color: white !important;
+    }
+</style>
+
+<script>
+    // Auto-fill CV Builder from uploaded CV data
+    async function autoFillCVBuilder() {
+        try {
+            const response = await fetch('/api/cv-data');
+            const data = await response.json();
+
+            if (!data.active) {
+                showToast('Warning', 'Please upload your CV first on the Scan CV page.', 'warning');
+                return;
+            }
+
+            // Fill form fields with extracted data
+            const fieldMap = {
+                'cvName': data.name,
+                'cvTitle': data.title,
+                'cvEmail': data.email,
+                'cvPhone': data.phone,
+                'cvLinkedin': data.linkedin,
+                'cvLocation': data.location,
+                'cvSummary': data.summary,
+                'cvSkills': data.skills,
+                'cvExpRole': data.exp_role,
+                'cvExpCompany': data.exp_company,
+                'cvExpDesc': data.exp_desc,
+                'cvEduSchool': data.edu_school,
+                'cvEduMajor': data.edu_major,
+            };
+
+            let filledCount = 0;
+            for (const [id, value] of Object.entries(fieldMap)) {
+                if (value) {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.value = value;
+                        filledCount++;
+                        // Add highlight animation
+                        el.style.transition = 'background-color 0.3s';
+                        el.style.backgroundColor = '#e8f5e9';
+                        setTimeout(() => { el.style.backgroundColor = ''; }, 1500);
+                    }
+                }
+            }
+
+            // Trigger live preview update
+            if (typeof updateAllTemplates === 'function') updateAllTemplates();
+            if (typeof updateCV === 'function') updateCV();
+
+            showToast('Success', `Auto-filled ${filledCount} fields from your CV! Review and edit as needed.`, 'success');
+        } catch (error) {
+            console.error('Auto-fill error:', error);
+            showToast('Error', 'Failed to load CV data. Please try again.', 'danger');
+        }
+    }
+
+    // Template switching function
+    function switchTemplate(templateName) {
+        // Hide all templates
+        document.querySelectorAll('.cv-template').forEach(t => t.classList.add('d-none'));
+
+        // Show selected template
+        const selectedTemplate = document.getElementById('template' + templateName.charAt(0).toUpperCase() + templateName.slice(1));
+        if (selectedTemplate) selectedTemplate.classList.remove('d-none');
+
+        // Update button states
+        document.querySelectorAll('#templateSelector button').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.textContent.toLowerCase() === templateName) btn.classList.add('active');
+        });
+
+        // Re-apply current form values to new template
+        updateAllTemplates();
+    }
+
+    // Update all templates with current form values
+    function updateAllTemplates() {
+        const fields = {
+            'cvName': '.prev-name',
+            'cvTitle': '.prev-title',
+            'cvEmail': '.prev-email',
+            'cvPhone': '.prev-phone',
+            'cvLocation': '.prev-location',
+            'cvSummary': '.prev-summary',
+            'cvExpRole': '.prev-exp-role',
+            'cvExpCompany': '.prev-exp-company',
+            'cvExpDesc': '.prev-exp-desc',
+            'cvEduSchool': '.prev-edu-school',
+            'cvEduMajor': '.prev-edu-major'
+        };
+
+        for (const [inputId, previewClass] of Object.entries(fields)) {
+            const input = document.getElementById(inputId);
+            if (input) {
+                document.querySelectorAll(previewClass).forEach(el => {
+                    el.textContent = input.value;
+                });
+            }
+        }
+
+        // Handle Skills for Modern template
+        const skillsInput = document.getElementById('cvSkills');
+        if (skillsInput) {
+            const skills = skillsInput.value.split(',').map(s => s.trim()).filter(s => s);
+
+            // Modern template - badges
+            document.querySelectorAll('.cv-template-modern .prev-skills').forEach(el => {
+                el.innerHTML = skills.map(skill =>
+                    `<span class="badge rounded-pill px-3 py-2" style="background: rgba(102, 126, 234, 0.1); color: #667eea;">${skill}</span>`
+                ).join('');
+            });
+
+            // Classic template - text
+            document.querySelectorAll('.cv-template-classic .prev-skills').forEach(el => {
+                el.textContent = skills.join(' • ');
+            });
+
+            // Creative template - progress bars
+            document.querySelectorAll('.prev-skills-creative').forEach(el => {
+                el.innerHTML = skills.slice(0, 5).map((skill, i) => `
+                    <div class="mb-2">
+                        <div class="small opacity-75 mb-1">${skill}</div>
+                        <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);">
+                            <div class="progress-bar" style="width: ${90 - i * 5}%; background: linear-gradient(90deg, #e94560, #ff6b6b);"></div>
+                        </div>
+                    </div>
+                `).join('');
+            });
+
+            // Update initials in Creative template
+            const nameInput = document.getElementById('cvName');
+            if (nameInput) {
+                const initials = nameInput.value.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+                document.querySelectorAll('.cv-template-creative .rounded-circle span.fw-bold').forEach(el => {
+                    el.textContent = initials;
+                });
+            }
+        }
+    }
+
+    // Override updateCV to update all templates after main.js is loaded
+    window.addEventListener('load', () => {
+        const originalUpdateCV = window.updateCV;
+        window.updateCV = function () {
+            if (originalUpdateCV) originalUpdateCV();
+            updateAllTemplates();
+        };
+        // Initial update
+        updateAllTemplates();
+    });
+
+    // Download CV as PDF function using html2pdf
+    async function downloadCV() {
+        const visibleTemplate = document.querySelector('.cv-template:not(.d-none)');
+        if (!visibleTemplate) {
+            showToast('Error', 'No CV template found!');
+            return;
+        }
+
+        const btn = document.getElementById('downloadPdfBtn');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Generating PDF...';
+        btn.disabled = true;
+
+        const userName = document.getElementById('cvName').value || 'User';
+        const fileName = `${userName.replace(/\s+/g, '_')}_CV.pdf`;
+
+        // Create a dedicated container for PDF generation (hidden from view)
+        const printContainer = document.createElement('div');
+        printContainer.style.position = 'absolute';
+        printContainer.style.left = '-9999px';
+        printContainer.style.top = '0';
+        printContainer.style.width = '210mm'; // Standard A4 width
+        
+        // Clone the template and strip UI-specific styles
+        const element = visibleTemplate.cloneNode(true);
+        element.style.width = '210mm';
+        element.style.minHeight = '297mm';
+        element.style.margin = '0';
+        element.style.borderRadius = '0';
+        element.style.boxShadow = 'none';
+        element.style.display = 'block'; // Ensure it's visible to the engine
+        
+        printContainer.appendChild(element);
+        document.body.appendChild(printContainer);
+        
+        // Configuration for html2pdf
+        const opt = {
+            margin: 0,
+            filename: fileName,
+            image: { type: 'jpeg', quality: 1 },
+            html2canvas: { 
+                scale: 2, 
+                useCORS: true, 
+                letterRendering: true,
+                backgroundColor: '#ffffff',
+                scrollY: 0
+            },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        try {
+            // Check if html2pdf is loaded
+            if (typeof html2pdf === 'undefined') {
+                throw new Error('PDF Engine not loaded yet. Please wait a moment and try again.');
+            }
+
+            // Generate and save
+            await html2pdf().set(opt).from(element).save();
+            showToast('Success', 'PDF downloaded successfully!', 'success');
+        } catch (error) {
+            console.error('PDF Generation Error:', error);
+            showToast('Error', error.message || 'Failed to generate PDF. Trying native print...', 'warning');
+            
+            // Fallback to native print if direct download fails
+            setTimeout(() => { window.print(); }, 1000);
+        } finally {
+            // Cleanup
+            if (printContainer.parentNode) document.body.removeChild(printContainer);
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    }
+</script>

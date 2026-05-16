@@ -1,0 +1,2211 @@
+# -*- coding: utf-8 -*-
+"""Flask web application for NCKH job matching system"""
+
+from flask import Flask, render_template, request, jsonify, send_file, session
+import os
+import re
+import json
+from time import perf_counter
+from werkzeug.utils import secure_filename
+import pandas as pd
+import numpy as np
+import uuid
+from werkzeug.security import generate_password_hash, check_password_hash
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import normalize
+import matplotlib
+matplotlib.use('Agg') # Non-interactive backend
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+
+from config import (
+    TOPK_USER_JOB, CORE_SKILLS_CANON, SIM_THRESHOLD, 
+    CANDIDATES_TOP, TOPK_SIMILAR, MIN_KEEP_PROB,
+    SKILL_LEXICON, SECTION_WEIGHT, DOMAIN_SKILL_LEXICON, DOMAIN_KEYWORDS
+)
+from utils.data_loader import load_excel_file, load_pdf_file, extract_all_text_from_pdf
+from utils.text_processing import (
+    norm_text, infer_role_canonical, parse_year_range, exp_bucket, 
+    parse_location_city_detail, short_label
+)
+from scoring.skill_variants import extract_skills_probabilistic
+from visualization.graph_visualization import clean_focus_layout
+from kg.graph_init import init_rdf_graph
+from kg.job_builder import build_job_nodes
+from kg.user_builder import build_user_node, build_strict_user_job_graph
+from scoring.user_job_score import compute_user_job_scores
+from scoring.xai import explain_user_job
+from kg.similarity import build_job_job_similar_edges
+import networkx as nx
+from networkx.readwrite import json_graph
+import time
+import secrets
+
+app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'job-match-ai-dev-secret')
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
+
+import sqlite3
+import time
+
+DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'app.db')
+
+def get_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+from web.migrations import run_migrations
+
+def init_db():
+    # Always run migrations to ensure schema is up-to-date
+    # Migrations should use 'IF NOT EXISTS'
+    run_migrations(DB_PATH)
+
+# Initialize DB on startup
+init_db() 
+
+# Session-scoped state (user-specific)
+# Defined below in the app_state section to keep related data together
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    name = data.get('name', 'User')
+
+    if not email or not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return jsonify({'error': 'Invalid email format.'}), 400
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters.'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)", 
+                  (name, email, generate_password_hash(password)))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Email already registered.'}), 400
+    finally:
+        conn.close()
+
+    session['user_email'] = email
+    return jsonify({'success': True})
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE email = ?", (email,))
+    user = c.fetchone()
+    conn.close()
+
+    if not user or not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'Invalid credentials.'}), 401
+        
+    session['user_email'] = email
+    return jsonify({'success': True})
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    _session_store.pop(session.get('session_id'), None)
+    session.pop('user_email', None)
+    return jsonify({'success': True})
+
+
+@app.route('/api/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.json or {}
+    email = data.get('email', '').strip().lower()
+    if not email:
+        return jsonify({'error': 'Email is required.'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id FROM users WHERE email = ?", (email,))
+    user = c.fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'error': 'Email not found.'}), 404
+
+    reset_token = secrets.token_urlsafe(24)
+    c.execute(
+        "INSERT INTO password_resets (email, reset_token, used) VALUES (?, ?, 0)",
+        (email, reset_token)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'reset_token': reset_token})
+
+
+@app.route('/api/reset-password', methods=['POST'])
+def reset_password():
+    data = request.json or {}
+    token = data.get('token', '').strip()
+    new_password = data.get('new_password', '')
+    if not token or len(new_password) < 6:
+        return jsonify({'error': 'Token and password (>= 6 chars) are required.'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, email FROM password_resets WHERE reset_token = ? AND used = 0 ORDER BY id DESC LIMIT 1",
+        (token,)
+    )
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Invalid or used reset token.'}), 400
+
+    c.execute(
+        "UPDATE users SET password_hash = ? WHERE email = ?",
+        (generate_password_hash(new_password), row['email'])
+    )
+    c.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (row['id'],))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/auth-status')
+def auth_status():
+    email = session.get('user_email')
+    if not email: return jsonify({'logged_in': False})
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT name FROM users WHERE email = ?", (email,))
+    user = c.fetchone()
+    conn.close()
+    
+    if not user:
+        return jsonify({'logged_in': False})
+        
+    return jsonify({'logged_in': True, 'user': {'email': email, 'name': user['name']}})
+
+
+# Global immutable state (shared across sessions)
+app_state = {
+    'df': None,
+    'job_nodes': None,
+    'job_info': None,
+    'G': None,          # Base job graph
+    'tfidf': None,
+    'X': None,
+    'IDX': None,
+    'valid_job_nodes': None,
+    'is_ready': False,  # Tracking initialization
+}
+
+
+def _score_color_mapper(min_score, max_score):
+    """Create a monotonic score->color mapper used by both /graph and /results.
+
+    Higher score => darker node color.
+    """
+    def hex_to_rgb(h):
+        h = h.lstrip('#')
+        return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+
+    def rgb_to_hex(rgb):
+        return '#%02x%02x%02x' % tuple(int(max(0, min(1, c)) * 255) for c in rgb)
+
+    light_hex = '#fff5e6'
+    dark_hex = '#6b0018'
+    light_rgb = hex_to_rgb(light_hex)
+    dark_rgb = hex_to_rgb(dark_hex)
+
+    def norm_score(score):
+        if max_score > min_score:
+            t = (float(score) - float(min_score)) / (float(max_score) - float(min_score))
+        else:
+            t = 1.0
+        return max(0.0, min(1.0, t))
+
+    def color_for(score, gamma=2.6):
+        t = norm_score(score) ** float(gamma)
+        r = light_rgb[0] + (dark_rgb[0] - light_rgb[0]) * t
+        g = light_rgb[1] + (dark_rgb[1] - light_rgb[1]) * t
+        b = light_rgb[2] + (dark_rgb[2] - light_rgb[2]) * t
+        return rgb_to_hex((r, g, b))
+
+    return color_for
+
+# Session-scoped state (user-specific)
+SESSION_TTL_SECONDS = int(os.environ.get('SESSION_TTL_SECONDS', '3600'))
+_session_store = {}
+_last_cleanup_at = 0.0
+SESSION_USER_DEFAULTS = {
+    'cv_text': None,
+    'cv_filename': None,
+    'USER_ID': None,
+    'scores': None,
+    'user_prob': None,
+    'user_city': None,
+    'user_detail': None,
+    'user_role_can': None,
+    'user_exp_bucket': None,
+    'user_raw2can_best': None,
+    'user_raw2can_map': None,
+    'current_G': None,  # Working graph (User + Jobs)
+    'cv_vec': None,
+}
+
+PERSISTED_SESSION_FIELDS = (
+    'cv_filename',
+    'cv_text',
+    'user_prob',
+    'scores',
+)
+
+
+def _to_json_safe(value):
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_json_safe(v) for v in value]
+    if hasattr(value, 'item'):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    return str(value)
+
+
+def _load_persisted_user_state(session_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT session_id, cv_filename, cv_text, user_prob, scores, updated_at FROM user_sessions WHERE session_id = ?",
+        (session_id,)
+    )
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return None
+
+    data = dict(SESSION_USER_DEFAULTS)
+    data['cv_filename'] = row['cv_filename']
+    data['cv_text'] = row['cv_text']
+    data['user_prob'] = json.loads(row['user_prob']) if row['user_prob'] else None
+    data['scores'] = json.loads(row['scores']) if row['scores'] else None
+    return data
+
+
+def persist_user_state(user_state):
+    session_id = _get_session_id()
+    payload = {k: _to_json_safe(user_state.get(k)) for k in PERSISTED_SESSION_FIELDS}
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO user_sessions (session_id, cv_filename, cv_text, user_prob, scores, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(session_id) DO UPDATE SET
+            cv_filename=excluded.cv_filename,
+            cv_text=excluded.cv_text,
+            user_prob=excluded.user_prob,
+            scores=excluded.scores,
+            updated_at=CURRENT_TIMESTAMP
+        """,
+        (
+            session_id,
+            payload['cv_filename'],
+            payload['cv_text'],
+            json.dumps(payload['user_prob'], ensure_ascii=False) if payload['user_prob'] is not None else None,
+            json.dumps(payload['scores'], ensure_ascii=False) if payload['scores'] is not None else None,
+        )
+    )
+    conn.commit()
+    conn.close()
+
+
+def _cleanup_expired_sessions(force=False):
+    global _last_cleanup_at
+    now = time.time()
+    if not force and now - _last_cleanup_at < 60:
+        return
+    _last_cleanup_at = now
+    expired = [sid for sid, payload in _session_store.items() if payload.get('expires_at', 0) <= now]
+    for sid in expired:
+        _session_store.pop(sid, None)
+
+
+def _get_session_id():
+    session_id = session.get('session_id')
+    if not session_id:
+        session_id = secrets.token_urlsafe(24)
+        session['session_id'] = session_id
+    return session_id
+
+
+def get_user_state(create=True):
+    _cleanup_expired_sessions()
+    session_id = _get_session_id()
+    payload = _session_store.get(session_id)
+    now = time.time()
+
+    if payload is None:
+        if not create:
+            return None
+        restored_state = _load_persisted_user_state(session_id)
+        payload = {
+            'data': restored_state if restored_state is not None else dict(SESSION_USER_DEFAULTS),
+            'expires_at': now + SESSION_TTL_SECONDS,
+        }
+        _session_store[session_id] = payload
+    else:
+        payload['expires_at'] = now + SESSION_TTL_SECONDS
+
+    return payload['data']
+
+
+@app.before_request
+def _session_ttl_housekeeping():
+    _cleanup_expired_sessions()
+
+DASHBOARD_DATA_FILE = os.path.join(os.path.dirname(__file__), 'data', 'dashboard_data.json')
+
+def load_dashboard_data():
+    email = session.get('user_email')
+    if not email:
+        # Support guests via session storage
+        guest_data = session.get('guest_dashboard')
+        if guest_data:
+            return guest_data
+        return {
+            "kanban": {"saved": [], "applied": [], "interview": [], "offer": []},
+            "activity": [],
+            "stats": {"scans": 0, "matches": 0}
+        }
+    
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute("""
+            SELECT d.* FROM user_dashboards d
+            JOIN users u ON d.user_id = u.id
+            WHERE u.email = ?
+        """, (email,))
+        row = c.fetchone()
+        if row:
+            return {
+                "kanban": json.loads(row['kanban_data'] or '{"saved": [], "applied": [], "interview": [], "offer": []}'),
+                "activity": json.loads(row['activity_data'] or "[]"),
+                "stats": json.loads(row['stats_data'] or '{"scans": 0, "matches": 0}')
+            }
+        else:
+            return {
+                "kanban": {"saved": [], "applied": [], "interview": [], "offer": []},
+                "activity": [],
+                "stats": {"scans": 0, "matches": 0}
+            }
+    finally:
+        conn.close()
+
+def save_dashboard_data(data):
+    email = session.get('user_email')
+    if not email:
+        # Persist guest data in session
+        session['guest_dashboard'] = data
+        session.modified = True
+        return
+    
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE email = ?", (email,))
+        user = c.fetchone()
+        if not user: return
+        user_id = user['id']
+        
+        c.execute("""
+            INSERT INTO user_dashboards (user_id, kanban_data, activity_data, stats_data, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                kanban_data=excluded.kanban_data,
+                activity_data=excluded.activity_data,
+                stats_data=excluded.stats_data,
+                updated_at=CURRENT_TIMESTAMP
+        """, (
+            user_id, 
+            json.dumps(data['kanban'], ensure_ascii=False),
+            json.dumps(data['activity'], ensure_ascii=False),
+            json.dumps(data['stats'], ensure_ascii=False)
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+def log_activity(atype, title, subtitle):
+    data = load_dashboard_data()
+    icons = {
+        'scan': 'bi-file-earmark-pdf',
+        'move': 'bi-arrow-right-circle',
+        'interview': 'bi-calendar-check',
+        'builder': 'bi-pencil-square',
+        'match': 'bi-lightning-charge'
+    }
+    colors = {
+        'scan': 'info',
+        'move': 'primary',
+        'interview': 'warning',
+        'builder': 'success',
+        'match': 'danger'
+    }
+    
+    from datetime import datetime
+    new_act = {
+        "type": atype,
+        "title": title,
+        "subtitle": subtitle,
+        "time": datetime.now().strftime("%I:%M %p, %b %d"),
+        "icon": icons.get(atype, 'bi-info-circle'),
+        "color": colors.get(atype, 'primary')
+    }
+    data['activity'].insert(0, new_act)
+    data['activity'] = data['activity'][:15] # Keep last 15
+    save_dashboard_data(data)
+
+@app.route('/api/status')
+def system_status():
+    """Check if the system has finished initializing"""
+    return jsonify({
+        'ready': app_state.get('is_ready', False),
+        'jobs_loaded': len(app_state['job_nodes']) if app_state.get('job_nodes') else 0,
+    })
+
+@app.route('/')
+def index():
+    """Home page"""
+    return render_template('index.html')
+
+@app.route('/upload_page')
+def upload_page():
+    user_state = get_user_state()
+    return render_template('pages/upload.html', cv_filename=user_state.get('cv_filename'))
+
+@app.route('/dashboard')
+def dashboard():
+    return render_template('pages/dashboard.html')
+
+@app.route('/search')
+def search_page():
+    return render_template('pages/search.html')
+
+@app.route('/cv-builder')
+def cv_builder():
+    return render_template('pages/cv_builder.html')
+
+@app.route('/results-page')
+def results_page():
+    return render_template('pages/results.html')
+
+@app.route('/graph-page')
+def graph_page():
+    return render_template('pages/graph.html')
+
+@app.route('/skills_page')
+def skills_page():
+    return render_template('pages/skills.html')
+
+@app.route('/stats-page')
+def stats_page():
+    return render_template('pages/stats.html')
+
+@app.route('/interview-page')
+def interview_page():
+    return render_template('pages/interview.html')
+
+@app.route('/salary-page')
+def salary_page():
+    return render_template('pages/salary.html')
+
+# --- Dashboard API ---
+
+@app.route('/api/dashboard')
+def get_dashboard_data():
+    data = load_dashboard_data()
+    # Update stats based on session if needed, or just return persistent ones
+    return jsonify(data)
+
+@app.route('/api/kanban/update', methods=['POST'])
+def update_kanban_state():
+    new_kanban = request.json
+    data = load_dashboard_data()
+    data['kanban'] = new_kanban
+    save_dashboard_data(data)
+    return jsonify({'success': True})
+
+@app.route('/api/kanban/add', methods=['POST'])
+def add_kanban_item():
+    item = request.json # {title, company, loc, status}
+    data = load_dashboard_data()
+    status = item.get('status', 'saved')
+    
+    from datetime import datetime
+    new_card = {
+        "id": "kb_" + datetime.now().strftime("%Y%m%d%H%M%S%f"),
+        "title": item.get('title'),
+        "company": item.get('company'),
+        "loc": item.get('loc', 'Unknown'),
+        "date": datetime.now().strftime("%b %d, %Y"),
+        "job_id": item.get('job_id'),
+        "url": item.get('url')
+    }
+    
+    if status in data['kanban']:
+        data['kanban'][status].append(new_card)
+        log_activity('move', 'New Application', f"Added {new_card['title']} at {new_card['company']}")
+        save_dashboard_data(data)
+        return jsonify({'success': True, 'item': new_card})
+    else:
+        # Fallback if column name doesn't match
+        data['kanban']['saved'].append(new_card)
+        save_dashboard_data(data)
+        return jsonify({'success': True, 'item': new_card})
+
+@app.route('/api/kanban/delete/<col>/<item_id>', methods=['DELETE'])
+def delete_kanban_item(col, item_id):
+    data = load_dashboard_data()
+    if col in data['kanban']:
+        original_len = len(data['kanban'][col])
+        data['kanban'][col] = [i for i in data['kanban'][col] if i['id'] != item_id]
+        if len(data['kanban'][col]) < original_len:
+            save_dashboard_data(data)
+            return jsonify({'success': True})
+    return jsonify({'error': 'Item not found'}), 404
+
+@app.route('/upload', methods=['POST'])
+def upload_files():
+    user_state = get_user_state()
+    """Handle file uploads"""
+    user_prob = {}
+    try:
+        if not app_state.get('is_ready'):
+            return jsonify({'error': 'System is still initializing. Please wait a few moments...'}), 503
+            
+        pdf_file = request.files.get('pdf_file')
+
+        # Check if PDF file is provided
+        if not pdf_file:
+            return jsonify({'error': 'PDF file required'}), 400
+        if not pdf_file.filename.lower().endswith('.pdf'):
+            return jsonify({'error': 'Only PDF files are allowed.'}), 400
+
+        # Always use default Excel file
+        excel_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'merged_jobs.xlsx')
+        if not os.path.exists(excel_path):
+            return jsonify({'error': 'Default job database (merged_jobs.xlsx) not found'}), 400
+
+        # Save PDF temporarily
+        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(pdf_file.filename))
+        pdf_file.save(pdf_path)
+
+        try:
+            # 1. Load CV text
+            cv_text = extract_all_text_from_pdf(pdf_path, verbose=False)
+            user_state['cv_text'] = cv_text
+            user_state['cv_filename'] = pdf_file.filename
+
+            # 2. Get pre-computed immutable app data
+            job_info = app_state['job_info']
+            job_nodes = app_state['job_nodes']
+            valid_job_nodes = app_state['valid_job_nodes']
+            tfidf = app_state['tfidf']
+            X = app_state['X']
+            IDX = app_state['IDX']
+            
+            # 3. Create a clean working graph
+            G = app_state['G'].copy()
+            user_state['current_G'] = G
+
+            # 4. Build user node and extract skills
+            USER_ID, user_prob, user_city, user_detail, user_raw2can_map, user_raw2can_best = \
+                build_user_node(G, cv_text)
+
+            user_state['USER_ID'] = USER_ID
+            user_state['user_prob'] = user_prob
+            user_state['user_city'] = user_city
+            user_state['user_detail'] = user_detail
+            user_state['user_raw2can_map'] = user_raw2can_map
+            user_state['user_raw2can_best'] = user_raw2can_best
+            user_state['user_role_can'] = infer_role_canonical(cv_text)
+            user_exp_min, user_exp_max, _ = parse_year_range(cv_text)
+            user_state['user_exp_bucket'] = exp_bucket(user_exp_min, user_exp_max) if user_exp_min is not None else "Exp_Unknown"
+
+            # 5. Transform CV text to TF-IDF
+            cv_vec = normalize(tfidf.transform([norm_text(cv_text)]))
+            user_state['cv_vec'] = cv_vec
+
+            # 6. Compute user-job match scores
+            scores = compute_user_job_scores(
+                job_nodes, job_info, user_prob, user_city, user_detail,
+                IDX, X, cv_vec, tfidf, user_state['user_role_can'], 
+                user_state['user_exp_bucket'], user_raw2can_best, user_raw2can_map,
+                cv_text
+            )
+            user_state['scores'] = scores
+            persist_user_state(user_state)
+
+            # 7. Add MATCHES_JOB edges
+            for job_node, score, explain in scores:
+                G.add_edge(USER_ID, job_node, rel="MATCHES_JOB", score=round(score, 3))
+
+            return jsonify({
+                'success': True,
+                'jobs_count': len(job_nodes),
+                'skills_detected': len(user_prob),
+                'user_city': user_city,
+                'user_role': user_state['user_role_can'],
+                'cv_filename': pdf_file.filename
+            })
+        finally:
+            # Log activity and update stats
+            log_activity('scan', 'CV Analyzed', f"Extracted {len(user_prob)} skills from {pdf_file.filename}")
+            db_data = load_dashboard_data()
+            db_data['stats']['scans'] += 1
+            save_dashboard_data(db_data)
+            
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/results')
+def results():
+    user_state = get_user_state()
+    """Display matching results"""
+    if user_state.get('scores') is None:
+        return jsonify([])
+
+    score_slice = user_state['scores'][:TOPK_USER_JOB]
+    score_values = [float(sc) for _, sc, _ in score_slice]
+    min_score = min(score_values) if score_values else 0.0
+    max_score = max(score_values) if score_values else 1.0
+    color_for = _score_color_mapper(min_score, max_score)
+
+    results_data = []
+    for rank, (j, sc, ex) in enumerate(score_slice, start=1):
+        job_title = short_label(app_state['job_info'][j]['title'], 90)
+
+        hex_color = color_for(sc)
+        cr, cg, cb = tuple(int(hex_color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+        shadow_rgb = (cr * 0.5, cg * 0.5, cb * 0.5)
+        shadow_hex = '#%02x%02x%02x' % tuple(int(max(0, min(1, c)) * 255) for c in shadow_rgb)
+
+        results_data.append({
+            'rank': rank,
+            'id': j,
+            'score': sc,
+            'color': hex_color,
+            'shadow': shadow_hex,
+            'title': job_title,
+            'full_title': app_state['job_info'][j]['title'],
+            'city': app_state['job_info'][j]['city'],
+            'company': app_state['job_info'][j].get('company', 'N/A'),
+            'url': app_state['job_info'][j]['url'],
+        })
+
+    return jsonify(results_data)
+
+@app.route('/api/cv-full')
+def cv_full():
+    user_state = get_user_state()
+    """Return full extracted CV text and structured info"""
+    if not app_state.get('is_ready'):
+        return jsonify({'active': False, 'initializing': True})
+
+    if user_state.get('cv_text') is None:
+        return jsonify({'active': False})
+    
+    cv_text = user_state['cv_text']
+    
+    # Extract structured info
+    email_match = re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', cv_text)
+    phone_match = re.search(r'(?:\+84|0)\s*\d[\d\s.\-]{7,12}', cv_text)
+    
+    user_prob = user_state.get('user_prob', {})
+    skills_list = []
+    for s, p in user_prob.items():
+        skills_list.append({
+            'name': s,
+            'prob': round(p * 100, 1),
+            'is_core': s in CORE_SKILLS_CANON
+        })
+    
+    # Sort skills by probability
+    skills_list.sort(key=lambda x: x['prob'], reverse=True)
+
+    return jsonify({
+        'active': True,
+        'cv_text': cv_text,
+        'char_count': len(cv_text),
+        'line_count': len(cv_text.split('\n')),
+        'role': user_state.get('user_role_can', 'Unknown'),
+        'city': user_state.get('user_city', 'Unknown'),
+        'email': email_match.group(0) if email_match else '',
+        'phone': re.sub(r'\s+', '', phone_match.group(0)) if phone_match else '',
+        'skills': [s['name'] for s in skills_list[:20]], # for backward compatibility
+        'detailed_skills': skills_list,
+        'skills_count': len(skills_list),
+        'core_skills_count': sum(1 for s in skills_list if s['is_core']),
+        'filename': user_state.get('cv_filename', ''),
+    })
+
+
+def _get_job_detail_data(job_id):
+    user_state = get_user_state()
+    """Helper to get detailed job information for both API and template"""
+    try:
+        j = None
+        sc = 0.0
+        ex = {'components': {}}
+        
+        # 1. Try treating as index in scores
+        scores = user_state.get('scores') or []
+        try:
+            idx = int(job_id)
+            if idx < len(scores):
+                j, sc, ex = scores[idx]
+        except (ValueError, TypeError):
+            pass
+
+        # 2. Try searching by job node ID in the scores list
+        if j is None and scores:
+            for sj, ssc, sex in scores:
+                if str(sj) == str(job_id):
+                    j, sc, ex = sj, ssc, sex
+                    break
+
+        # 3. Try treating as actual job ID from app_state
+        if j is None:
+            if job_id in app_state.get('job_info', {}):
+                j = job_id
+            else:
+                # Search by job_id attribute in job_info
+                for node_id, info in app_state.get('job_info', {}).items():
+                    if str(info.get('job_id')) == str(job_id):
+                        j = node_id
+                        break
+        
+        if j is None:
+            return None, "Job not found"
+
+        job_info = app_state['job_info'][j]
+        job_prob = job_info.get("prob_skills", {})
+
+        # Compute match score if not already provided (e.g. from search)
+        if sc == 0.0 and user_state.get('user_prob') and app_state.get('is_ready'):
+            try:
+                from scoring.user_job_score import user_job_score
+                
+                cv_vec = user_state.get('cv_vec')
+                if cv_vec is None and user_state.get('cv_text'):
+                    # Reconstruct vector if session was restored from DB
+                    cv_vec = normalize(app_state['tfidf'].transform([norm_text(user_state['cv_text'])]))
+                
+                if cv_vec is not None:
+                    sc, ex = user_job_score(
+                        user_state.get('user_prob'),
+                        user_state.get('user_city'),
+                        user_state.get('user_detail'),
+                        j,
+                        app_state['job_info'],
+                        app_state['IDX'],
+                        app_state['X'],
+                        cv_vec,
+                        app_state['tfidf'],
+                        user_state.get('user_role_can', 'general'),
+                        user_state.get('user_exp_bucket', 'Exp_Unknown'),
+                        user_raw2can_best=user_state.get('user_raw2can_best'),
+                        user_raw2can_map=user_state.get('user_raw2can_map'),
+                        cv_domain="general"
+                    )
+            except Exception as e_score:
+                print(f"[ERROR] Recalculating score failed: {e_score}")
+                pass
+
+        if user_state.get('user_raw2can_best'):
+            user_prob_max_raw = {
+                canon: float(p)
+                for canon, (_, p) in user_state['user_raw2can_best'].items()
+                if isinstance(p, (int, float))
+            }
+        else:
+            user_prob_max_raw = user_state.get('user_prob', {})
+
+        xai = explain_user_job(user_prob_max_raw, job_prob, 
+                              user_raw2can=user_state.get('user_raw2can_map'), 
+                              job_raw2can=job_info.get('raw2can'))
+
+        detail = {
+            'id': job_id,
+            'title': job_info['title'],
+            'company': job_info.get('company', 'N/A'),
+            'city': job_info['city'],
+            'url': job_info['url'],
+            'description': job_info.get('description', ''),
+            'requirements': job_info.get('requirements', ''),
+            'benefits': job_info.get('benefits', ''),
+            'score': sc,
+            'components': ex.get('components', {}),
+            'skill_coverage': f"{xai['components']['skill_coverage']*100:.1f}%",
+            'matched_skills': xai['evidence']['matched_skills'][:15],
+            'missing_skills': [
+                {
+                    'skill': s['skill'],
+                    'name': s['skill'],
+                    'tip': f"Focus on {s['skill']} to improve your profile.",
+                    'url': f"https://www.google.com/search?q=learn+{s['skill']}+online+course"
+                } for s in xai['evidence']['missing_skills'][:10]
+            ],
+            'ai_insight': _generate_ai_insight(sc, xai['evidence']['matched_skills'])
+        }
+        return detail, None
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return None, str(e)
+
+def _generate_ai_insight(score, matched_skills):
+    """Generate dynamic AI insight based on match score and skills"""
+    if score >= 0.85:
+        base = "You are an exceptional match for this role!"
+    elif score >= 0.65:
+        base = "You are a strong candidate for this position."
+    elif score >= 0.45:
+        base = "You have a good foundation for this role, though some gaps exist."
+    else:
+        base = "This role might be a stretch, but your core skills are relevant."
+    
+    skill_part = ""
+    if matched_skills:
+        top_skill = matched_skills[0]
+        skill_name = top_skill.get('skill', top_skill) if isinstance(top_skill, dict) else top_skill
+        skill_part = f" Your expertise in {skill_name} is a key asset here."
+        
+    return f"{base}{skill_part} Highlight your adaptability and willingness to learn missing requirements."
+
+@app.route('/job/<job_id>')
+def job_detail_api(job_id):
+    """API endpoint for job details (JSON)"""
+    detail, error = _get_job_detail_data(job_id)
+    if error:
+        status_code = 404 if "not found" in error.lower() else 400
+        return jsonify({'error': error}), status_code
+    return jsonify(detail)
+
+@app.route('/job-detail/<job_id>')
+def job_detail_page(job_id):
+    """Render a dedicated job detail page"""
+    detail, error = _get_job_detail_data(job_id)
+    if error:
+        # Check if error is job not found
+        if "not found" in str(error).lower():
+            return render_template('pages/job_detail.html', error="Job Not Found", job=None), 404
+        return render_template('index.html', error=error)
+    return render_template('pages/job_detail.html', job=detail)
+
+@app.route('/user-skills')
+def user_skills():
+    user_state = get_user_state()
+    """Get detected user skills"""
+    skills = []
+    if user_state.get('user_prob') is None:
+        return jsonify([])
+    for k, v in sorted(user_state['user_prob'].items(), key=lambda x: x[1], reverse=True):
+        core_tag = "CORE" if k in CORE_SKILLS_CANON else ""
+        skills.append({
+            'name': k,
+            'probability': float(v),
+            'is_core': k in CORE_SKILLS_CANON,
+            'tag': "CORE" if k in CORE_SKILLS_CANON else ""
+        })
+
+    return jsonify(skills)
+
+
+@app.route('/statistics')
+def statistics():
+    user_state = get_user_state()
+    """Get dataset statistics"""
+    job_nodes = app_state['job_nodes']
+    job_info = app_state['job_info']
+
+    # Calculate stats
+    Cj_sizes = [len(job_info[j]["prob_skills"]) for j in job_nodes if j in job_info]
+    Cj_sizes = np.array(Cj_sizes)
+
+    stats = {
+        'total_jobs': len(job_nodes),
+        'user_skills': len(user_state.get('user_prob', {})),
+        'avg_job_skills': round(Cj_sizes.mean(), 3),
+        'median_job_skills': round(np.median(Cj_sizes), 3),
+        'min_job_skills': int(Cj_sizes.min()),
+        'max_job_skills': int(Cj_sizes.max()),
+    }
+
+    return jsonify(stats)
+
+# @app.route('/graph')
+# def graph_data():
+    # user_state = get_user_state()
+    # user_state = get_user_state()
+    # user_state = get_user_state()
+#     """Get graph visualization data"""
+#     # Ensure the graph is available and the CV has been processed
+#     if state['G'] is None or user_state['cv_text'] is None:
+#         return jsonify({'error': 'No graph available. Please upload a CV first.'}), 400
+
+#     try:
+#         # Use H from state
+#         H = state['G']
+        
+#         # Limit graph size for visualization (top nodes)
+#         if len(H.nodes()) > 200:
+#             # Get user node and top job nodes
+#             user_nodes = [n for n in H.nodes() if H.nodes[n].get('ntype') == 'User']
+#             job_nodes = [n for n in H.nodes() if H.nodes[n].get('ntype') == 'JobPosting']
+#             skill_nodes = [n for n in H.nodes() if H.nodes[n].get('ntype') in ['Skill', 'SkillRaw']]
+            
+#             # Take sample
+#             selected_jobs = job_nodes[:30]  # Top 30 jobs
+#             selected_skills = skill_nodes[:50]  # Top 50 skills
+#             selected_nodes = user_nodes + selected_jobs + selected_skills
+            
+#             # Create subgraph
+#             H_sub = H.subgraph(selected_nodes).copy()
+#         else:
+#             H_sub = H
+        
+#         # Convert to JSON format for visualization
+#         data = json_graph.node_link_data(H_sub)
+        
+#         # Add additional info
+#         graph_info = {
+#             'nodes': len(H_sub.nodes()),
+#             'edges': len(H_sub.edges()),
+#             'total_nodes': len(H.nodes()),
+#             'total_edges': len(H.edges()),
+#             'data': data
+#         }
+        
+#         return jsonify(graph_info)
+#     except Exception as e:
+#         return jsonify({'error': str(e)}), 500
+@app.route('/graph')
+def graph_data():
+    user_state = get_user_state()
+    """Get focused knowledge graph data for visualization.
+    Requires CV upload first to populate user node + MATCHES_JOB edges.
+    Returns nodes/links with pre-computed positions.
+    """
+    # More specific state checks
+    if user_state.get('cv_text') is None:
+        return jsonify({'error': 'No CV uploaded yet. Please upload your CV first to generate the knowledge graph.'}), 400
+    if user_state.get('USER_ID') is None:
+        return jsonify({'error': 'User node not created. CV processing incomplete.'}), 400
+    if user_state.get('current_G') is None:
+        return jsonify({'error': 'Graph state is not available after restart. Please re-upload your CV to regenerate graph context.'}), 400
+
+    try:
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        logger = logging.getLogger(__name__)
+        
+        G = user_state['current_G']
+        USER_ID = user_state['USER_ID']  # Safe now due to prior checks
+
+        if USER_ID not in G:
+            return jsonify({'error': 'User node missing in graph context. Please re-upload your CV.'}), 400
+
+        logger.info(f"Generating graph for USER_ID={USER_ID}, G.nodes={len(G.nodes())}")
+        
+        # Center on user node
+        center_node = USER_ID
+
+        # --- build focus subgraph (logic chuẩn của bạn)
+        H = build_strict_user_job_graph(
+            G,
+            user_node=USER_ID,
+            topk=TOPK_USER_JOB
+        )
+
+        # --- layout
+        from visualization.graph_visualization import clean_focus_layout
+        pos = clean_focus_layout(H, center_node)
+
+        def _safe_float(val, default=0.0):
+            try:
+                if val is None:
+                    return default
+                f = float(val)
+                if np.isnan(f) or np.isinf(f):
+                    return default
+                return f
+            except Exception:
+                return default
+
+        # --- serialize nodes
+        # Collect job scores from MATCHES_JOB edges so heatmap reflects real match score.
+        job_scores = {}
+        for u, v, d in H.edges(data=True):
+            if u == USER_ID and d.get("rel") == "MATCHES_JOB":
+                job_scores[v] = _safe_float(d.get("score"), 0.0)
+
+        # Fallback for defensive safety if edge score is unavailable.
+        if not job_scores:
+            job_scores = {
+                n: _safe_float(H.nodes[n].get("score", 0.0), 0.0)
+                for n in H.nodes()
+                if H.nodes[n].get("ntype") == "JobPosting"
+            }
+
+        score_values = list(job_scores.values())
+        min_score = min(score_values) if score_values else 0.0
+        max_score = max(score_values) if score_values else 1.0
+        cmap = plt.get_cmap('YlOrRd')
+
+        # Use Normalize for mapping, but to guarantee monotonic perceived darkness
+        # we'll interpolate between a light and dark color in RGB space.
+        from matplotlib.colors import Normalize
+        norm = Normalize(vmin=min_score, vmax=max_score) if max_score > min_score else Normalize(vmin=0.0, vmax=1.0)
+
+        nodes = []
+        for n in H.nodes():
+            x, y = pos.get(n, (0.0, 0.0))
+            node_data = {
+                "id": n,
+                "label": str(H.nodes[n].get("label", "") or ""),
+                "ntype": H.nodes[n].get("ntype", "Other"),
+                "x": _safe_float(x, 0.0),
+                "y": _safe_float(y, 0.0)
+            }
+            
+            # Add heatmap color for job nodes
+            if node_data["ntype"] == "JobPosting":
+                # Ensure job name is always present for rendering labels on graph.
+                info = app_state.get('job_info', {}).get(n, {})
+                full_title = str(info.get('title', '') or node_data["label"] or n)
+                node_data["full_title"] = full_title
+                if not node_data["label"].strip():
+                    node_data["label"] = short_label(full_title, 90)
+
+                score = job_scores.get(n, 0.0)
+                node_data["score"] = score
+
+                # Map score -> color via interpolation to guarantee monotonic darkness
+                color_for = _score_color_mapper(min_score, max_score)
+                color_hex = color_for(score)
+                node_data["color"] = color_hex
+                # shadow: darker variant
+                cr, cg, cb = tuple(int(color_hex.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+                shadow_rgb = (cr * 0.5, cg * 0.5, cb * 0.5)
+                node_data["shadow"] = '#%02x%02x%02x' % tuple(int(max(0, min(1, c)) * 255) for c in shadow_rgb)
+                
+            nodes.append(node_data)
+
+        # --- serialize edges
+        links = []
+        for u, v, d in H.edges(data=True):
+            links.append({
+                "source": u,
+                "target": v,
+                "rel": d.get("rel"),
+                "score": _safe_float(d.get("score"), None),
+                "prob": _safe_float(d.get("prob"), None)
+            })
+
+        return jsonify({
+            "nodes": nodes,
+            "links": links,
+            "nodes_count": len(nodes),
+            "links_count": len(links),
+            "total_nodes": len(G.nodes()),
+            "total_edges": len(G.edges())
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def process_graph(H, center_node, max_nodes=200):
+    """Process the graph and generate layout positions"""
+    try:
+        # Validate center_node
+        if center_node not in H:
+            raise ValueError("Invalid center node")
+
+        # Focus on the neighborhood of the center node
+        neighborhood = set(H.neighbors(center_node))
+        neighborhood.add(center_node)
+
+        # Limit the number of nodes for visualization
+        if len(neighborhood) > max_nodes:
+            neighborhood = set(list(neighborhood)[:max_nodes])
+
+        # Create a subgraph for the neighborhood
+        H_sub = H.subgraph(neighborhood).copy()
+
+        # Generate layout
+        pos = nx.spring_layout(H_sub, k=0.15, iterations=20)
+
+        return pos
+    except Exception as e:
+        raise RuntimeError(f"Error processing graph: {e}")
+
+def _analyze_response(user_msg, cv_skills):
+    """
+    Smart NLP analysis of user's interview response.
+    Returns dict with: mentioned_skills, mentioned_tools, sentiment_keywords,
+    word_count, has_example, has_numbers, depth_score
+    """
+    import re
+    msg_lower = user_msg.lower()
+    words = msg_lower.split()
+    word_count = len(words)
+
+    # 1. Detect skills mentioned (match against CV skill list + common tech)
+    common_tech = [
+        'python', 'java', 'javascript', 'typescript', 'react', 'angular', 'vue',
+        'node', 'django', 'flask', 'fastapi', 'spring', 'docker', 'kubernetes',
+        'aws', 'azure', 'gcp', 'sql', 'nosql', 'mongodb', 'postgresql', 'mysql',
+        'redis', 'kafka', 'tensorflow', 'pytorch', 'scikit-learn', 'pandas',
+        'numpy', 'spark', 'hadoop', 'airflow', 'git', 'ci/cd', 'jenkins',
+        'linux', 'api', 'rest', 'graphql', 'microservices', 'agile', 'scrum',
+        'machine learning', 'deep learning', 'nlp', 'computer vision', 'ai',
+        'data science', 'data engineering', 'devops', 'cloud', 'html', 'css',
+        'c++', 'c#', 'go', 'rust', 'kotlin', 'swift', 'r', 'matlab',
+        'tableau', 'power bi', 'excel', 'figma', 'jira', 'confluence'
+    ]
+    all_skills = set(s.lower() for s in cv_skills) | set(common_tech)
+    
+    mentioned_skills = []
+    for skill in all_skills:
+        if skill in msg_lower:
+            mentioned_skills.append(skill)
+    
+    # 2. Detect action/result keywords (STAR method indicators)
+    action_words = ['built', 'created', 'developed', 'designed', 'implemented',
+                    'led', 'managed', 'optimized', 'improved', 'reduced', 'increased',
+                    'automated', 'deployed', 'launched', 'migrated', 'refactored',
+                    'solved', 'fixed', 'analyzed', 'trained', 'mentored',
+                    'xây dựng', 'phát triển', 'thiết kế', 'tối ưu', 'cải thiện',
+                    'triển khai', 'quản lý', 'dẫn dắt', 'giải quyết', 'tạo']
+    found_actions = [w for w in action_words if w in msg_lower]
+    
+    # 3. Detect if they gave a concrete example
+    example_markers = ['for example', 'for instance', 'such as', 'specifically',
+                       'in one project', 'at my', 'when i', 'i once', 'last year',
+                       'ví dụ', 'cụ thể', 'trong dự án', 'tại công ty', 'khi tôi']
+    has_example = any(m in msg_lower for m in example_markers)
+    
+    # 4. Detect numbers/metrics (shows quantitative thinking)
+    has_numbers = bool(re.search(r'\d+', user_msg))
+    number_context = re.findall(r'(\d+\s*(?:%|percent|users|customers|months|years|team|people|projects|hours|days|times|x|gb|tb|ms|seconds|năm|tháng|người|dự án))', msg_lower)
+    
+    # 5. Detect STAR Method components
+    star_analysis = {
+        'S': bool(re.search(r'\b(at|in|when|during|tại|khi|trong khi|ở)\b.*\b(project|company|company|team|time|dự án|công ty|đội)\b', msg_lower)),
+        'T': bool(re.search(r'\b(task|goal|objective|aim|responsibility|nhiệm vụ|mục tiêu|trách nhiệm)\b', msg_lower)),
+        'A': len(found_actions) >= 2,
+        'R': bool(re.search(r'\b(result|outcome|achieved|success|delivered|kết quả|đạt được|thành công)\b', msg_lower)) or has_numbers
+    }
+    
+    # 6. Sentiment / confidence keywords
+    positive_words = ['passionate', 'love', 'enjoy', 'excited', 'proud', 'achieved',
+                      'successful', 'thích', 'đam mê', 'tự hào', 'thành công']
+    negative_words = ['struggle', 'difficult', 'challenge', 'hard', 'failed', 'issue', 'problem',
+                      'khó', 'thử thách', 'thất bại', 'vấn đề', 'trở ngại']
+    has_positive = any(w in msg_lower for w in positive_words)
+    has_challenge = any(w in msg_lower for w in negative_words)
+    
+    # 7. Calculate scores
+    depth = 0
+    depth += min(word_count / 2, 25)           # Max 25 pts for length
+    depth += len(mentioned_skills) * 10         # 10 pts per skill
+    depth += len(found_actions) * 5             # 5 pts per action
+    depth += 15 if has_example else 0           # 15 pts for example
+    depth += 10 if has_numbers else 0           # 10 pts for numbers
+    
+    # STAR bonus
+    star_score = sum(star_analysis.values()) * 10 # Max 40 pts
+    depth += star_score
+    depth = min(int(depth), 100)
+    
+    return {
+        'mentioned_skills': mentioned_skills[:5],
+        'found_actions': found_actions[:4],
+        'word_count': word_count,
+        'has_example': has_example,
+        'has_numbers': has_numbers,
+        'number_context': number_context[:3],
+        'has_positive': has_positive,
+        'has_challenge': has_challenge,
+        'depth_score': depth,
+        'star_analysis': star_analysis
+    }
+
+
+def _build_acknowledgment(analysis, user_msg):
+    """
+    Build a contextual acknowledgment sentence based on response analysis.
+    Returns (english, vietnamese) tuple.
+    """
+    import random
+    skills = analysis['mentioned_skills']
+    actions = analysis['found_actions']
+    depth = analysis['depth_score']
+    word_count = analysis['word_count']
+    
+    en_parts = []
+    vi_parts = []
+    
+    # --- Depth-based opening ---
+    if word_count < 10:
+        en_parts.append(random.choice([
+            "I'd love to hear more detail.",
+            "Could you expand on that a bit?",
+            "That's a start — can you elaborate further?"
+        ]))
+        vi_parts.append("Tôi muốn nghe thêm chi tiết.")
+    elif depth >= 70:
+        en_parts.append(random.choice([
+            "That's an excellent, detailed response!",
+            "Very thorough answer — I'm impressed!",
+            "Outstanding level of detail!"
+        ]))
+        vi_parts.append("Câu trả lời rất chi tiết và xuất sắc!")
+    elif depth >= 40:
+        en_parts.append(random.choice([
+            "That's a solid answer.",
+            "Good explanation!",
+            "Thank you for sharing that."
+        ]))
+        vi_parts.append("Câu trả lời tốt!")
+    else:
+        en_parts.append(random.choice([
+            "Thank you for your response.",
+            "I appreciate you sharing that.",
+            "Interesting perspective."
+        ]))
+        vi_parts.append("Cảm ơn câu trả lời của bạn.")
+    
+    # --- Skill acknowledgment ---
+    if skills:
+        if len(skills) >= 3:
+            skill_str = ', '.join(f"**{s}**" for s in skills[:3])
+            en_parts.append(f"I notice you're well-versed in {skill_str} — that's a strong combination.")
+            vi_parts.append(f"Tôi nhận thấy bạn thành thạo {skill_str} — đó là sự kết hợp mạnh mẽ.")
+        elif len(skills) >= 1:
+            en_parts.append(f"Your experience with **{skills[0]}** is clearly relevant here.")
+            vi_parts.append(f"Kinh nghiệm của bạn với **{skills[0]}** rõ ràng rất phù hợp.")
+    
+    # --- Action verb acknowledgment ---
+    if actions and len(actions) >= 2:
+        en_parts.append("I can see you've taken real ownership in your work.")
+        vi_parts.append("Tôi thấy bạn đã thực sự chủ động trong công việc.")
+    
+    # --- Example/numbers acknowledgment ---
+    if analysis['has_example'] and analysis['has_numbers']:
+        en_parts.append("The concrete example with metrics really strengthens your answer.")
+        vi_parts.append("Ví dụ cụ thể với số liệu thực sự làm câu trả lời thuyết phục hơn.")
+    elif analysis['has_example']:
+        en_parts.append("Great use of a specific example to illustrate your point.")
+        vi_parts.append("Sử dụng ví dụ cụ thể rất tốt để minh họa.")
+    elif analysis['has_numbers']:
+        en_parts.append("I like that you quantified your impact — that shows strong analytical thinking.")
+        vi_parts.append("Tôi thích việc bạn đưa ra con số — điều đó thể hiện tư duy phân tích tốt.")
+    
+    # --- STAR Method coaching ---
+    star = analysis.get('star_analysis', {})
+    if not all(star.values()) and word_count > 20:
+        missing = [k for k, v in star.items() if not v]
+        labels = {'S': 'Situation', 'T': 'Task', 'A': 'Action', 'R': 'Result'}
+        missing_labels = [labels[m] for m in missing]
+        
+        if 'R' in missing:
+            en_parts.append("💡 **Tip**: Don't forget to mention the **Result** or impact of your actions.")
+            vi_parts.append("💡 **Mẹo**: Đừng quên nhắc đến **Kết quả** hoặc tác động từ hành động của bạn.")
+        elif 'A' in missing:
+            en_parts.append("💡 **Tip**: I'd love to hear more about the specific **Actions** you personally took.")
+            vi_parts.append("💡 **Mẹo**: Tôi muốn nghe thêm về những **Hành động** cụ thể mà bạn đã trực tiếp thực hiện.")
+    
+    en = ' '.join(en_parts)
+    vi = ' '.join(vi_parts)
+    return en, vi
+
+
+# ── Question bank organized by category ──
+INTERVIEW_QUESTIONS = {
+    'intro': {
+        'en': "To start, could you please introduce yourself and highlight how your experience fits this position?",
+        'vi': "Để bắt đầu, bạn vui lòng giới thiệu bản thân và nêu bật kinh nghiệm phù hợp với vị trí này?",
+    },
+    'skill_deep_1': {
+        'en': "Can you describe a specific project where you applied **{skill}** to solve a complex problem? What was the outcome?",
+        'vi': "Bạn có thể mô tả một dự án cụ thể mà bạn đã áp dụng **{skill}** để giải quyết vấn đề phức tạp không? Kết quả như thế nào?",
+    },
+    'skill_deep_2': {
+        'en': "How do you typically combine **{skill_1}** and **{skill_2}** in your workflow? Can you give a concrete example?",
+        'vi': "Bạn thường kết hợp **{skill_1}** và **{skill_2}** trong quy trình làm việc như thế nào? Bạn có thể cho ví dụ cụ thể không?",
+    },
+    'behavioral_star': {
+        'en': "Tell me about a time you faced a significant technical challenge. What was the **Situation**, your **Task**, the **Action** you took, and the **Result**?",
+        'vi': "Hãy kể về một lần bạn đối mặt thử thách kỹ thuật lớn. **Tình huống** là gì, **Nhiệm vụ** của bạn, **Hành động** bạn đã thực hiện, và **Kết quả** ra sao?",
+    },
+    'technical_design': {
+        'en': "For this role, imagine you need to design a system from scratch using **{skill}**. Walk me through your approach.",
+        'vi': "Với vị trí này, hãy tưởng tượng bạn cần thiết kế hệ thống từ đầu sử dụng **{skill}**. Hãy trình bày cách tiếp cận của bạn.",
+    },
+    'teamwork': {
+        'en': "How do you handle tight deadlines or shifting priorities? Have you had a disagreement with a colleague? How did you resolve it?",
+        'vi': "Bạn xử lý thế nào khi gặp deadline gấp? Bạn đã bao giờ bất đồng với đồng nghiệp chưa? Giải quyết ra sao?",
+    },
+    'growth': {
+        'en': "What do you consider your biggest area for growth? What skill are you currently developing?",
+        'vi': "Bạn coi đâu là lĩnh vực cần phát triển nhất? Kỹ năng nào bạn đang phát triển?",
+    },
+    'motivation': {
+        'en': "What motivates you in your career? Why are you interested in this role, and what work environment suits you best?",
+        'vi': "Điều gì thúc đẩy bạn trong sự nghiệp? Tại sao bạn quan tâm vị trí này? Môi trường làm việc nào phù hợp nhất?",
+    },
+    'leadership': {
+        'en': "Have you ever led a project or initiative? Tell me about a time you went above and beyond what was expected.",
+        'vi': "Bạn đã bao giờ dẫn dắt dự án nào chưa? Hãy kể về lần bạn vượt xa kỳ vọng.",
+    },
+    'wrapup': {
+        'en': "We're nearing the end. Do you have any questions for me about the role, team, or company culture?",
+        'vi': "Chúng ta sắp kết thúc. Bạn có câu hỏi nào về vị trí, đội ngũ, hoặc văn hóa công ty không?",
+    },
+}
+
+QUESTION_ORDER = [
+    'intro', 'skill_deep_1', 'skill_deep_2', 'behavioral_star',
+    'technical_design', 'teamwork', 'growth', 'motivation', 'leadership', 'wrapup'
+]
+
+
+@app.route('/interview/chat', methods=['POST'])
+def interview_chat():
+    user_state = get_user_state()
+    """Smart Bilingual AI Interview — analyzes user responses with NLP"""
+    if user_state.get('cv_text') is None:
+        return jsonify({'reply': "I'm ready to interview you! Please upload your CV first so I can tailor the questions to your experience.\n\n(Tôi đã sẵn sàng phỏng vấn bạn! Vui lòng tải CV lên trước để tôi có thể điều chỉnh câu hỏi phù hợp với kinh nghiệm của bạn.)"})
+
+    data = request.json
+    user_msg = data.get('message', '')
+    history = data.get('history', [])
+    topic_start = data.get('topic_start', None)  # e.g. 'behavioral_star'
+
+    # ── Context from state ──
+    user_role = user_state.get('user_role_can', 'Professional')
+    user_skills = list(user_state.get('user_prob', {}).keys())
+    
+    target_job = "the position"
+    if user_state.get('scores') and len(user_state['scores']) > 0:
+        target_job = app_state['job_info'][user_state['scores'][0][0]]['title']
+
+    turn_count = len([h for h in history if h.get('role') == 'user'])
+    
+    skill_1 = user_skills[0] if len(user_skills) > 0 else 'your primary skill'
+    skill_2 = user_skills[1] if len(user_skills) > 1 else 'another technical area'
+    skill_3 = user_skills[2] if len(user_skills) > 2 else 'a relevant tool'
+
+    # ── Analyze user's previous response ──
+    analysis = _analyze_response(user_msg, user_skills) if user_msg != 'init_interview' else None
+    
+    # ── Check if response is too shallow (greeting, "ok", "yes", etc.) ──
+    is_shallow = False
+    if analysis and analysis['depth_score'] < 15 and analysis['word_count'] < 10:
+        is_shallow = True
+
+    # ── Compute effective_turn: shallow responses don't advance the question ──
+    # Count how many previous user messages were also shallow (from history)
+    effective_turn = turn_count
+    if is_shallow and turn_count > 0:
+        effective_turn = max(turn_count - 1, 0)  # Stay on current question
+    
+    # ── Build reply ── 
+    if turn_count == 0:
+        # Opening — no analysis needed
+        reply = (f"Hello! I am your AI Interviewer. Based on your profile, I see you have a strong background as a **{user_role}**. "
+                 f"We are considering you for the **{target_job}** role.\n\n"
+                 f"(Chào bạn! Tôi là Người phỏng vấn AI. Dựa trên hồ sơ của bạn, tôi thấy bạn có nền tảng vững chắc là **{user_role}**. "
+                 f"Chúng tôi đang xem xét bạn cho vị trí **{target_job}**.)\n\n")
+        q = INTERVIEW_QUESTIONS['intro']
+        reply += f"{q['en']}\n\n({q['vi']})"
+
+    elif topic_start and topic_start in INTERVIEW_QUESTIONS:
+        # ── Topic chip was clicked: jump directly to that question ──
+        ack_en, ack_vi = _build_acknowledgment(analysis, user_msg) if analysis else ("Great!", "Tuyệt!")
+        q = INTERVIEW_QUESTIONS[topic_start]
+        q_en = q['en'].format(skill=skill_1, skill_1=skill_1, skill_2=skill_2, skill_3=skill_3)
+        q_vi = q['vi'].format(skill=skill_1, skill_1=skill_1, skill_2=skill_2, skill_3=skill_3)
+        reply = f"{ack_en}\n\n{q_en}\n\n({ack_vi}\n\n{q_vi})"
+
+    elif is_shallow:
+        # ── Response too short / just a greeting — re-ask the current question ──
+        import random
+        prev_q_key = QUESTION_ORDER[min(effective_turn, len(QUESTION_ORDER) - 1)]
+        prev_q = INTERVIEW_QUESTIONS[prev_q_key]
+        prev_q_en = prev_q['en'].format(skill=skill_1, skill_1=skill_1, skill_2=skill_2, skill_3=skill_3)
+        prev_q_vi = prev_q['vi'].format(skill=skill_1, skill_1=skill_1, skill_2=skill_2, skill_3=skill_3)
+        
+        nudge_en = random.choice([
+            "I appreciate that! But could you go into more detail?",
+            "Thanks! I'd love to hear a more detailed answer.",
+            "Got it! Could you elaborate a bit more on that?",
+            "I see! Can you share more specifics so I can understand your experience better?",
+        ])
+        nudge_vi = random.choice([
+            "Cảm ơn! Nhưng bạn có thể trả lời chi tiết hơn không?",
+            "Tôi hiểu! Bạn có thể chia sẻ thêm chi tiết không?",
+            "Tốt! Bạn có thể nói rõ hơn một chút không?",
+        ])
+        
+        reply = (f"{nudge_en}\n\n"
+                 f"💡 **Tip**: Try to include specific examples, tools you used, and measurable outcomes.\n\n"
+                 f"{prev_q_en}\n\n"
+                 f"({nudge_vi}\n\n"
+                 f"💡 **Mẹo**: Hãy thử đưa vào ví dụ cụ thể, công cụ đã dùng, và kết quả đo lường được.\n\n"
+                 f"{prev_q_vi})")
+
+    elif effective_turn >= 10:
+        # Final
+        ack_en, ack_vi = _build_acknowledgment(analysis, user_msg)
+        reply = (f"{ack_en}\n\nThank you for your time! This has been a very productive interview. "
+                 "You can click **\"End Session\"** to see your summary.\n\n"
+                 f"({ack_vi}\n\nCảm ơn bạn! Đây là buổi phỏng vấn rất hiệu quả. "
+                 "Nhấn **\"End Session\"** để xem tóm tắt.)")
+    
+    else:
+        # ── Smart response: Acknowledgment + Next Question ──
+        ack_en, ack_vi = _build_acknowledgment(analysis, user_msg)
+        
+        # Determine next question category
+        q_key = QUESTION_ORDER[min(effective_turn, len(QUESTION_ORDER) - 1)]
+        q = INTERVIEW_QUESTIONS[q_key]
+        
+        # Format question with skill placeholders
+        q_en = q['en'].format(skill=skill_1, skill_1=skill_1, skill_2=skill_2, skill_3=skill_3)
+        q_vi = q['vi'].format(skill=skill_1, skill_1=skill_1, skill_2=skill_2, skill_3=skill_3)
+        
+        # If user mentioned skills in their answer, dynamically adjust the next skill question
+        if q_key in ('skill_deep_1', 'skill_deep_2', 'technical_design') and analysis['mentioned_skills']:
+            # Ask about a skill they DIDN'T mention yet for variety
+            unmentioned = [s for s in user_skills[:6] if s.lower() not in 
+                          [ms.lower() for ms in analysis['mentioned_skills']]]
+            if unmentioned:
+                pick = unmentioned[0]
+                q_en = q['en'].format(skill=pick, skill_1=pick, skill_2=skill_2, skill_3=skill_3)
+                q_vi = q['vi'].format(skill=pick, skill_1=pick, skill_2=skill_2, skill_3=skill_3)
+        
+        reply = f"{ack_en}\n\n{q_en}\n\n({ack_vi}\n\n{q_vi})"
+    
+    latency_ms = (perf_counter() - request_started_at) * 1000
+    app.logger.info(
+        "[interview_chat] latency_ms=%.2f shallow=%s turn=%s topic_start=%s",
+        latency_ms,
+        is_shallow,
+        turn_count + 1,
+        topic_start
+    )
+
+    return jsonify({
+        'reply': reply,
+        'turn': turn_count + 1,
+        'total_turns': 10,
+        'analysis': analysis,
+        'history_contract': {
+            'user_turn_requires_analysis': True,
+            'analysis_nullable': True
+        },
+        'shallow': is_shallow  # Tell frontend this was a shallow response
+    })
+
+
+def _normalize_interview_history(history):
+    """Normalize chat history into a stable schema."""
+    normalized = []
+    for turn in history or []:
+        if not isinstance(turn, dict):
+            continue
+        role = turn.get('role')
+        content = turn.get('content', '')
+        item = {
+            'role': role,
+            'content': content
+        }
+        if role == 'user':
+            item['analysis'] = turn.get('analysis')
+        elif 'analysis' in turn:
+            item['analysis'] = turn.get('analysis')
+        normalized.append(item)
+    return normalized
+
+
+def _extract_user_turn_analysis(history, idx, user_turn):
+    """
+    Prefer analysis on the user turn (new schema), then fallback to nearest following AI turn (legacy schema).
+    """
+    analysis = user_turn.get('analysis')
+    if isinstance(analysis, dict):
+        return analysis
+
+    for next_turn in history[idx + 1:]:
+        if next_turn.get('role') != 'ai':
+            continue
+        ai_analysis = next_turn.get('analysis')
+        if isinstance(ai_analysis, dict):
+            return ai_analysis
+        break
+    return None
+
+
+@app.route('/interview/summary', methods=['POST'])
+def interview_summary():
+    user_state = get_user_state()
+    """Generate interview assessment summary"""
+    data = request.json
+    history = _normalize_interview_history(data.get('history', []))
+    
+    user_role = user_state.get('user_role_can', 'Professional')
+    user_skills = list(user_state.get('user_prob', {}).keys())[:8]
+    
+    target_job = "the position"
+    match_score = 0
+    if user_state.get('scores') and len(user_state['scores']) > 0:
+        target_job = app_state['job_info'][user_state['scores'][0][0]]['title']
+        match_score = round(user_state['scores'][0][1] * 100, 1)
+    
+    user_turns = [h for h in history if h.get('role') == 'user']
+    user_turn_analyses = []
+    for idx, h in enumerate(history):
+        if h.get('role') == 'user':
+            user_turn_analyses.append(_extract_user_turn_analysis(history, idx, h))
+    questions_answered = len(user_turns)
+    
+    # Determine covered topics based on turn count
+    topics = []
+    topic_labels = [
+        "Self Introduction", "Skill Deep-Dive", "Multi-Skill Integration",
+        "Behavioral (STAR)", "Technical Design", "Teamwork & Communication",
+        "Growth Areas", "Motivation & Culture", "Leadership", "Q&A"
+    ]
+    for i in range(min(questions_answered, len(topic_labels))):
+        topics.append(topic_labels[i])
+    
+    # 1. Technical Score (Depth)
+    tech_depths = [
+        a.get('depth_score', 0)
+        for a in user_turn_analyses
+        if isinstance(a, dict) and a.get('depth_score') is not None
+    ]
+    avg_tech = sum(tech_depths)/len(tech_depths) if tech_depths else 0
+    
+    # 2. Communication Score (Word count & Variety)
+    word_counts = [len(h.get('content', '').split()) for h in user_turns]
+    avg_words = round(sum(word_counts)/len(word_counts), 1) if word_counts else 0
+    comm_variety = [len(set(h.get('content', '').split())) for h in user_turns]
+    avg_comm = min((sum(comm_variety)/len(comm_variety))/30 * 100, 100) if comm_variety else 0
+    
+    # 3. Confidence/Structure (STAR check)
+    stars_found = 0
+    total_star_possible = questions_answered * 4
+    for analysis in user_turn_analyses:
+        if isinstance(analysis, dict) and isinstance(analysis.get('star_analysis'), dict):
+            stars_found += sum(analysis['star_analysis'].values())
+    star_score = (stars_found / total_star_possible * 100) if total_star_possible > 0 else 0
+
+    # Assessment logic
+    overall = (avg_tech * 0.5) + (avg_comm * 0.2) + (star_score * 0.3)
+    
+    if overall > 80:
+        assessment = "Expert"
+        feedback = "Outstanding performance! You provided deep technical insights and structured your answers perfectly using the STAR method."
+        feedback_vi = "Tâm điểm tuyệt vời! Bạn đã đưa ra những hiểu biết kỹ thuật sâu sắc và cấu trúc câu trả lời hoàn hảo bằng phương pháp STAR."
+    elif overall > 60:
+        assessment = "Strong"
+        feedback = "Very good session. You demonstrated solid technical knowledge and clear communication."
+        feedback_vi = "Buổi phỏng vấn rất tốt. Bạn đã thể hiện kiến thức kỹ thuật vững chắc và khả năng giao tiếp rõ ràng."
+    elif overall > 40:
+        assessment = "Average"
+        feedback = "Decent start. Try to provide more concrete examples and quantitative results in your future sessions."
+        feedback_vi = "Khởi đầu khá ổn. Hãy cố gắng đưa ra nhiều ví dụ cụ thể và kết quả đo lường được trong các buổi tới."
+    else:
+        assessment = "Developing"
+        feedback = "Focus on elaborating more on your actions and the specific impact you had in projects."
+        feedback_vi = "Hãy tập trung vào việc mô tả chi tiết hơn các hành động và tác động cụ thể của bạn trong các dự án."
+
+    return jsonify({
+        'questions_answered': questions_answered,
+        'topics_covered': topics,
+        'assessment': assessment,
+        'scores': {
+            'technical': round(avg_tech, 1),
+            'communication': round(avg_comm, 1),
+            'structure': round(star_score, 1),
+            'overall': round(overall, 1)
+        },
+        'feedback': feedback,
+        'feedback_vi': feedback_vi,
+        'history_contract': {
+            'user_turn_requires_analysis': True,
+            'analysis_nullable': True,
+            'summary_reads_legacy_ai_analysis': True
+        },
+        'detected_skills': sorted(list(set([
+            s for analysis in user_turn_analyses
+            if isinstance(analysis, dict)
+            for s in (analysis.get('mentioned_skills') or [])
+            if s
+        ]))),
+        'avg_response_words': avg_words,
+        'target_job': target_job,
+        'match_score': match_score,
+        'top_skills': user_skills,
+        'role': user_role
+    })
+
+@app.route('/api/user-profile')
+def user_profile():
+    user_state = get_user_state()
+    """Get summarized user profile for UI widgets"""
+    if user_state.get('cv_text') is None:
+        return jsonify({'active': False})
+    
+    target_job = "N/A"
+    match_score = 0
+    if user_state.get('scores') and len(user_state['scores']) > 0:
+        best_job_id = user_state['scores'][0][0]
+        target_job = app_state['job_info'][best_job_id]['title']
+        match_score = user_state['scores'][0][1]
+
+    return jsonify({
+        'active': True,
+        'role': user_state.get('user_role_can', 'Unknown'),
+        'skills_count': len(user_state.get('user_prob', {})),
+        'target_job': target_job,
+        'match_score': round(match_score * 100, 1),
+        'city': user_state.get('user_city', 'Unknown')
+    })
+
+@app.route('/api/cv-data')
+def cv_data():
+    user_state = get_user_state()
+    """Extract structured CV data for the CV Builder auto-fill"""
+    if user_state.get('cv_text') is None:
+        return jsonify({'active': False})
+    
+    cv_text = user_state['cv_text']
+    
+    # ── Extract personal info using regex ──
+    # Email
+    email_match = re.search(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', cv_text)
+    email = email_match.group(0) if email_match else ''
+    
+    # Phone (Vietnamese & international formats)
+    phone_match = re.search(r'(?:\+84|0)\s*\d[\d\s.\-]{7,12}', cv_text)
+    phone = re.sub(r'\s+', '', phone_match.group(0)) if phone_match else ''
+    
+    # Name: try first non-empty line that looks like a name (2-4 capitalized words)
+    name = ''
+    for line in cv_text.split('\n')[:10]:
+        line = line.strip()
+        if not line or '@' in line or line.startswith('http') or len(line) > 60:
+            continue
+        words = line.split()
+        if 2 <= len(words) <= 5 and all(w[0].isupper() for w in words if w.isalpha()):
+            name = line
+            break
+    
+    # LinkedIn
+    linkedin_match = re.search(r'(?:linkedin\.com/in/|linkedin:\s*)(\S+)', cv_text, re.IGNORECASE)
+    linkedin = f"linkedin.com/in/{linkedin_match.group(1)}" if linkedin_match else ''
+    
+    # ── Skills ──
+    skills = list(user_state.get('user_prob', {}).keys())
+    
+    # ── Role / Title ──
+    role = user_state.get('user_role_can', '')
+    
+    # ── Location ──
+    city = user_state.get('user_city', '')
+    
+    # ── Summary: take first paragraph-like block that's > 50 chars ──
+    summary = ''
+    lines = cv_text.split('\n')
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if len(line) > 50 and not re.match(r'^[\w\s]{1,20}:$', line):
+            # Skip lines that are mostly special chars or headers
+            alpha_ratio = sum(1 for c in line if c.isalpha()) / max(len(line), 1)
+            if alpha_ratio > 0.5:
+                summary = line
+                break
+    
+    # ── Education: look for university/college keywords ──
+    edu_school = ''
+    edu_major = ''
+    edu_patterns = [
+        r'(?:university|đại học|college|học viện|trường)[^\n]{0,80}',
+        r'(?:bachelor|master|cử nhân|thạc sĩ|kỹ sư|engineer)[^\n]{0,80}'
+    ]
+    for pat in edu_patterns:
+        m = re.search(pat, cv_text, re.IGNORECASE)
+        if m:
+            found = m.group(0).strip()
+            if not edu_school:
+                edu_school = found
+            elif not edu_major:
+                edu_major = found
+            
+    # ── Experience: look for job title patterns ──
+    exp_role = role if role else ''
+    exp_company = ''
+    exp_desc = ''
+    
+    # Look for company names near role mentions
+    company_patterns = [
+        r'(?:at|tại|@)\s+([A-Z][A-Za-z\s&.]+(?:Inc|Corp|Ltd|LLC|Co|Company|Group|JSC|Technology|Solutions|Vietnam)?)',
+        r'(?:company|công ty)[:\s]+([^\n]+)',
+    ]
+    for pat in company_patterns:
+        m = re.search(pat, cv_text, re.IGNORECASE)
+        if m:
+            exp_company = m.group(1).strip()[:50]
+            break
+    
+    # Look for bullet-point descriptions
+    bullet_lines = []
+    for line in lines:
+        line = line.strip()
+        if line.startswith(('•', '-', '●', '○', '▪', '*')) and len(line) > 10:
+            bullet_lines.append(line)
+            if len(bullet_lines) >= 5:
+                break
+    exp_desc = '\n'.join(bullet_lines) if bullet_lines else ''
+    
+    return jsonify({
+        'active': True,
+        'name': name,
+        'title': role,
+        'email': email,
+        'phone': phone,
+        'linkedin': linkedin,
+        'location': city,
+        'summary': summary,
+        'skills': ', '.join(skills[:15]),
+        'exp_role': exp_role,
+        'exp_company': exp_company,
+        'exp_desc': exp_desc,
+        'edu_school': edu_school,
+        'edu_major': edu_major,
+    })
+
+
+@app.route('/api/salary-estimate', methods=['POST'])
+def salary_estimate():
+    """Estimate salary based on role, experience, and skills from DB"""
+    data = request.json
+    role_query = data.get('role', '').lower()
+    exp_year = int(data.get('exp', 0))
+    location = data.get('location', '').lower()
+    skills = data.get('skills', [])
+
+    if app_state['df'] is None:
+        return jsonify({
+            'min': 1000 + (exp_year * 200),
+            'max': 1800 + (exp_year * 300),
+            'currency': 'USD (Est.)'
+        })
+
+    df = app_state['df']
+    mask_role = df['job_title'].str.lower().str.contains(role_query, na=False)
+    
+    if 'remote' in location:
+        mask_loc = df['location'].str.lower().str.contains('remote', na=False)
+    elif location:
+         mask_loc = df['location'].str.lower().str.contains(location, na=False)
+    else:
+        mask_loc = True
+
+    subset = df[mask_role & mask_loc]
+    if len(subset) < 3:
+        subset = df[mask_role]
+
+    if len(subset) == 0:
+        return jsonify({'min': 1000, 'max': 2000, 'currency': 'USD'})
+
+    salaries = []
+    import re
+    def parse_salary_str(s):
+        s = str(s).lower().strip()
+        if not s or 'thỏa thuận' in s: return None
+        is_usd = 'usd' in s or '$' in s
+        scale = 25000 if is_usd else 1000000 
+        nums = re.findall(r'(\d+[.,]?\d*)', s.replace('.', '').replace(',', ''))
+        nums = [float(n) for n in nums]
+        if not nums: return None
+        if len(nums) == 1:
+             val = nums[0] * scale
+             return (val, val)
+        elif len(nums) >= 2:
+             v1 = nums[0] * scale
+             v2 = nums[1] * scale
+             return (v1, v2)
+        return None
+
+    for s_str in subset['salary']:
+        parsed = parse_salary_str(s_str)
+        if parsed: salaries.append(parsed)
+            
+    if not salaries:
+         return jsonify({'min': 1200, 'max': 2400, 'currency': 'USD'})
+
+    mins = [s[0] for s in salaries]
+    maxs = [s[1] for s in salaries]
+    
+    avg_min = np.mean(mins)
+    avg_max = np.mean(maxs)
+    
+    # Experience Multiplier
+    exp_multiplier = 0.7 + (exp_year * 0.1) # 10% increase per year
+    exp_multiplier = min(max(exp_multiplier, 0.7), 2.5)
+    
+    # Skills Bonus (5% per selected skill, max 20%)
+    skill_bonus = 1.0 + (min(len(skills), 4) * 0.05)
+    
+    final_min = (avg_min * exp_multiplier) / 25000
+    final_max = (avg_max * exp_multiplier * skill_bonus) / 25000
+    
+    return jsonify({
+        'min': int(final_min),
+        'max': int(final_max),
+        'currency': 'USD',
+        'count': len(salaries)
+    })
+
+@app.route('/api/featured-jobs')
+def featured_jobs():
+    """Get featured job opportunities for home page"""
+    if app_state['df'] is None:
+        return jsonify({'jobs': []})
+    
+    df = app_state['df']
+    
+    # Get 6 random jobs (to have variety on refresh)
+    sample_size = min(6, len(df))
+    sampled_df = df.sample(n=sample_size)
+    
+    jobs = []
+    for _, row in sampled_df.iterrows():
+        # Determine job type badge
+        location_lower = str(row.get('location', '')).lower()
+        job_type_lower = str(row.get('job_type', '')).lower()
+        
+        if 'remote' in location_lower or 'từ xa' in location_lower:
+            work_type = 'Remote'
+            badge_class = 'bg-success bg-opacity-10 text-success'
+        elif 'hybrid' in job_type_lower:
+            work_type = 'Hybrid'
+            badge_class = 'bg-primary bg-opacity-10 text-primary'
+        else:
+            work_type = 'On-site'
+            badge_class = 'bg-warning bg-opacity-10 text-warning'
+        
+        # Get skills (first 3)
+        skills_str = str(row.get('skills', ''))
+        skills_list = [s.strip() for s in skills_str.split(',') if s.strip()][:3]
+        if not skills_list:
+            # Try to extract from requirements
+            req_str = str(row.get('requirements', ''))
+            common_skills = ['Python', 'Java', 'JavaScript', 'SQL', 'AWS', 'React', 'Node.js', 'Docker']
+            skills_list = [s for s in common_skills if s.lower() in req_str.lower()][:3]
+        
+        jobs.append({
+            'id': row.get('job_id', ''),
+            'title': row.get('job_title', 'Unknown Role'),
+            'company': row.get('company', 'Unknown Company'),
+            'location': row.get('location', 'Vietnam'),
+            'salary': row.get('salary', 'Thỏa thuận'),
+            'url': row.get('job_url', '#'),
+            'work_type': work_type,
+            'badge_class': badge_class,
+            'skills': skills_list
+        })
+    
+    return jsonify({'jobs': jobs[:3]})  # Return only 3 jobs
+
+@app.route('/api/search')
+def api_search():
+    """Real-time job search with advanced filtering and sorting"""
+    query = request.args.get('q', '').lower()
+    location = request.args.get('location', 'All Locations').lower()
+    offset = int(request.args.get('offset', 0))
+    limit = int(request.args.get('limit', 20))
+    exp_levels = request.args.get('exp', '') # e.g. "intern,junior,senior,lead"
+    job_types = request.args.get('type', '') # e.g. "full,part,remote"
+    min_salary = int(request.args.get('min_salary', 0))
+    sort_by = request.args.get('sort', 'newest')  # newest, relevance, salary
+    if location in ('all', 'all locations'):
+        location = ''
+    if exp_levels.strip().lower() == 'all':
+        exp_levels = ''
+    if job_types.strip().lower() == 'all':
+        job_types = ''
+    
+    if app_state['df'] is None:
+        return jsonify({'jobs': [], 'has_more': False, 'total': 0})
+
+    df = app_state['df']
+    mask = pd.Series([True] * len(df), index=df.index)
+
+    # 1. Keyword Search (support multiple keywords, all must match)
+    if query:
+        import re
+        # Escape special regex characters in query
+        query_escaped = re.escape(query)
+        # Split into multiple keywords
+        keywords = [kw.strip() for kw in query.split() if kw.strip()]
+        
+        search_cols = ['job_title', 'company', 'requirements', 'job_desc', 'skills', 'benefits', 'location']
+        
+        for keyword in keywords:
+            keyword_escaped = re.escape(keyword.lower())
+            kw_mask = pd.Series([False] * len(df), index=df.index)
+            for col in search_cols:
+                if col in df.columns:
+                    kw_mask |= df[col].astype(str).str.lower().str.contains(keyword_escaped, na=False, regex=True)
+            mask &= kw_mask
+
+    # 2. Location Filter (Enhanced with VN mappings)
+    if location and location != 'all locations':
+        loc_map = {
+            'ho chi minh city': 'hồ chí minh|hcm|tp. hcm|tphcm|sài gòn',
+            'hanoi': 'hà nội|hanoi|hn',
+            'da nang': 'đà nẵng|đà nẵng|dn',
+            'remote': 'remote|từ xa|work from home|wfh'
+        }
+        pattern = loc_map.get(location, location)
+        mask &= df['location'].str.lower().str.contains(pattern, na=False, regex=True)
+
+    # 3. Job Type Filter (Enhanced)
+    if job_types:
+        type_list = [t.strip() for t in job_types.split(',') if t.strip()]
+        if len(type_list) < 4:
+            t_mask = pd.Series([False] * len(df), index=df.index)
+            for t in type_list:
+                if t == 'full': 
+                    t_mask |= df['job_type'].str.lower().str.contains('toàn thời gian|full|fulltime|full-time', na=False, regex=True)
+                elif t == 'part': 
+                    t_mask |= df['job_type'].str.lower().str.contains('bán thời gian|part|parttime|part-time', na=False, regex=True)
+                elif t == 'remote': 
+                    t_mask |= df['location'].str.lower().str.contains('remote|từ xa|work from home|wfh', na=False, regex=True)
+                elif t == 'contract':
+                    t_mask |= df['job_type'].astype(str).str.lower().str.contains(r'hợp đồng|freelance|contract', na=False, regex=True)
+            mask &= t_mask
+
+    # 4. Experience Filter
+    if exp_levels:
+        exp_list = [e.strip() for e in exp_levels.split(',') if e.strip()]
+        if len(exp_list) < 4:
+            exp_mask = pd.Series([False] * len(df), index=df.index)
+
+            text = (
+                df.get('job_title', pd.Series('', index=df.index)).astype(str) + ' ' +
+                df.get('experience', pd.Series('', index=df.index)).astype(str) + ' ' +
+                df.get('requirements', pd.Series('', index=df.index)).astype(str) + ' ' +
+                df.get('job_desc', pd.Series('', index=df.index)).astype(str)
+            ).str.lower()
+
+            for level in exp_list:
+                if level == 'intern':
+                    exp_mask |= text.str.contains(
+                        r'intern|fresher|thực tập|sinh viên|trainee|mới tốt nghiệp|không yêu cầu kinh nghiệm|0 năm',
+                        na=False, regex=True
+                    )
+                elif level == 'junior':
+                    exp_mask |= text.str.contains(
+                        r'junior|entry|nhân viên|1 năm|2 năm|1-2|0-2|ít nhất 1',
+                        na=False, regex=True
+                    )
+                elif level == 'senior':
+                    exp_mask |= text.str.contains(
+                        r'senior|middle|expert|3 năm|4 năm|5 năm|3-5|từ 3',
+                        na=False, regex=True
+                    )
+                elif level == 'lead':
+                    exp_mask |= text.str.contains(
+                        r'lead|leader|manager|head|director|trưởng|quản lý|architect',
+                        na=False, regex=True
+                    )
+
+            mask &= exp_mask
+
+    filtered_df = df[mask]
+
+    # 5. Salary Filter
+    if min_salary > 0:
+        def check_salary(s_str):
+            import re
+            s_str = str(s_str).lower()
+            if 'thỏa thuận' in s_str: return True
+            nums = re.findall(r'(\d+)', s_str.replace('.', '').replace(',', ''))
+            if not nums: return True
+            is_usd = 'usd' in s_str or '$' in s_str
+            val = float(nums[-1])
+            if not is_usd: val = val / 25 
+            return val >= min_salary
+        
+        filtered_df = filtered_df[filtered_df['salary'].apply(check_salary)]
+
+    # 6. Sorting
+    sort_applied = 'relevance_original_order'
+    if sort_by == 'newest':
+        # Priority: sort by normalized `job_id` from Excel (higher = newer)
+        if 'job_id' in filtered_df.columns:
+            filtered_df = filtered_df.copy()
+            filtered_df['_sort_job_id'] = pd.to_numeric(filtered_df['job_id'], errors='coerce')
+            if filtered_df['_sort_job_id'].notna().any():
+                filtered_df = filtered_df.sort_values('_sort_job_id', ascending=False)
+                sort_applied = 'job_id_numeric_desc'
+            else:
+                filtered_df = filtered_df.iloc[::-1]  # Fallback only when job_id is not parseable
+                sort_applied = 'fallback_reverse_unparseable_job_id'
+            filtered_df = filtered_df.drop(columns=['_sort_job_id'])
+        else:
+            filtered_df = filtered_df.iloc[::-1]
+            sort_applied = 'fallback_reverse_missing_job_id'
+    elif sort_by == 'salary':
+        # Sort by salary (high to low)
+        def extract_max_salary(s_str):
+            import re
+            s_str = str(s_str).lower()
+            if 'thỏa thuận' in s_str: return 0
+            nums = re.findall(r'(\d+)', s_str.replace('.', '').replace(',', ''))
+            if not nums: return 0
+            is_usd = 'usd' in s_str or '$' in s_str
+            val = float(nums[-1])
+            if not is_usd: val = val / 25
+            return val
+        filtered_df = filtered_df.copy()
+        filtered_df['_sort_salary'] = filtered_df['salary'].apply(extract_max_salary)
+        filtered_df = filtered_df.sort_values('_sort_salary', ascending=False)
+        filtered_df = filtered_df.drop(columns=['_sort_salary'])
+        sort_applied = 'salary_desc'
+    # else: relevance - keep original order
+
+    total_count = len(filtered_df)
+    results = filtered_df.iloc[offset : offset + limit]
+    
+    output = []
+    for _, row in results.iterrows():
+        output.append({
+            'id': row.get('job_id', ''),
+            'title': row.get('job_title', 'Unknown Role'),
+            'company': row.get('company', 'Unknown Company'),
+            'location': row.get('location', 'Remote'),
+            'salary': row.get('salary', 'Thỏa thuận'),
+            'url': row.get('job_url', '#'),
+            'type': row.get('job_type', 'Full-time')
+        })
+    
+    if output:
+        log_activity('match', 'Global Search', f"Found {total_count} jobs matching '{query}'")
+        db_data = load_dashboard_data()
+        db_data['stats']['matches'] += (1 if offset == 0 else 0) # Only count initial search
+        save_dashboard_data(db_data)
+
+    return jsonify({
+        'jobs': output,
+        'has_more': (offset + limit) < total_count,
+        'total': total_count,
+        'sort_applied': sort_applied
+    })
+
+
+def init_application():
+    try:
+        excel_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'merged_jobs.xlsx')
+        if not os.path.exists(excel_path):
+            print(f"[ERROR] merged_jobs.xlsx not found at {excel_path}. Please ensure the file exists.")
+            return
+        print("[INFO] Initializing NCKH Job Matching System...", flush=True)
+        
+        # 1. Load Excel Data
+        print(f"[INFO] Loading job data from {excel_path}...", flush=True)
+        _, df = load_excel_file(excel_path)
+        print(f"[SUCCESS] Loaded {len(df)} jobs from Excel.", flush=True)
+        
+        app_state['df'] = df
+        
+        # 2. Build Base Job Graph
+        print("[INFO] Building knowledge graph from job data...", flush=True)
+        G = nx.DiGraph()
+        init_rdf_graph()
+        job_info = {}
+        job_nodes, job_info = build_job_nodes(G, df, job_info)
+        app_state['G'] = G
+        app_state['job_nodes'] = job_nodes
+        app_state['job_info'] = job_info
+        
+        # 3. Pre-compute TF-IDF for all jobs
+        print("[INFO] Pre-computing TF-IDF vectors for matching...", flush=True)
+        valid_job_nodes = [j for j in job_nodes if j in job_info]
+        texts = [job_info[j]["text"] for j in valid_job_nodes]
+        
+        tfidf = TfidfVectorizer(
+            analyzer="char_wb", ngram_range=(3, 5),
+            min_df=1, max_df=1.0, max_features=12000,
+            sublinear_tf=True, lowercase=True
+        )
+        X = tfidf.fit_transform(texts)
+        X = normalize(X)
+        
+        app_state['tfidf'] = tfidf
+        app_state['X'] = X
+        app_state['IDX'] = {j: i for i, j in enumerate(valid_job_nodes)}
+        app_state['valid_job_nodes'] = valid_job_nodes
+        
+        # 4. Pre-compute Job-to-Job Similarities (SIMILAR_TO edges)
+        print("[INFO] Pre-calculating job-job similarities (this may take a minute)...", flush=True)
+        sim_edge_count = build_job_job_similar_edges(G, valid_job_nodes, job_info, app_state['IDX'], X)
+        print(f"[SUCCESS] Added {sim_edge_count} SIMILAR_TO edges.", flush=True)
+        
+        print("[SUCCESS] System Ready. Server is now fully functional.", flush=True)
+        app_state['is_ready'] = True
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[ERROR] Failed to initialize: {e}")
+
+
+# NOTE: Do NOT run this file directly.
+# Use: python main.py  (which calls init_application() first)
+# Running web/app.py directly will skip init_application() → all requests crash.
+if __name__ == "__main__":
+    init_application()
+    app.run(host="127.0.0.1", port=5000, debug=True)
+

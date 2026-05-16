@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="tab-content shadow-sm border-0 p-3">
+    {% include 'components/tabs/search.html' %}
+</div>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const tab = document.getElementById('search');
+        if (tab) tab.classList.add('show', 'active');
+
+        // Trigger initial search to load all jobs
+        if (typeof handleJobSearch === 'function') {
+            handleJobSearch();
+        }
+    });
+</script>
+{% endblock %}

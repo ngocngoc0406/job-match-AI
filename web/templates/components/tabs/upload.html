@@ -1,0 +1,74 @@
+<div class="tab-pane fade" id="upload" role="tabpanel">
+    <div id="analysis-content">
+        <!-- Analysis Tool Section -->
+        <div id="start-analysis" class="py-5">
+            <div class="text-center mb-5">
+                <h2 class="fw-bold mb-2">CV Analysis Engine</h2>
+                <p class="text-muted mx-auto" style="max-width: 500px;">Upload your CV to unlock detailed job matching insights and career analytics.</p>
+            </div>
+
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="row justify-content-center">
+                    <div class="col-md-10 col-lg-9">
+                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                            <div class="card-body p-5">
+                                <div class="upload-area-premium border-2 border-dashed rounded-4 p-5 text-center transition-all bg-light bg-opacity-50" id="dropZone">
+                                    <div class="mb-4">
+                                        <div class="upload-icon-wrapper d-inline-flex align-items-center justify-content-center bg-primary text-white rounded-circle shadow mb-3"
+                                            style="width: 70px; height: 70px;">
+                                            <i class="bi bi-cloud-arrow-up-fill fs-3"></i>
+                                        </div>
+                                    </div>
+                                    <h4 class="fw-bold mb-1">Select your CV</h4>
+                                    <p class="text-muted small mb-4">Drag and drop your PDF here, or click to browse</p>
+                                    
+                                    <input type="file" id="pdfFile" name="pdf_file" accept=".pdf" hidden required>
+                                    
+                                    <div id="fileNameDisplay" class="mt-2 badge bg-primary bg-opacity-10 text-primary p-2 border border-primary border-opacity-10" style="display:none; font-size: 0.9rem;"></div>
+                                </div>
+
+                                <div id="uploadInlineError" class="text-danger small mt-3 text-center d-none"></div>
+                                
+                                <div class="mt-5 text-center">
+                                    <button type="submit" class="btn btn-primary btn-lg rounded-pill shadow px-5 py-3 fw-bold shine-effect">
+                                        <i class="bi bi-stars me-2"></i>Analyze My Profile
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="card-footer bg-white border-0 pb-4">
+                                <div class="d-flex align-items-center justify-content-center gap-4 text-muted extra-small">
+                                    <span><i class="bi bi-shield-check text-success me-1"></i> 100% Private</span>
+                                    <span><i class="bi bi-lightning-fill text-warning me-1"></i> Instant Results</span>
+                                    <span><i class="bi bi-check-circle-fill text-info me-1"></i> PDF Supported</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.upload-area-premium {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    border-color: rgba(37, 99, 235, 0.2);
+    cursor: pointer;
+}
+.upload-area-premium:hover, .upload-area-premium.dragover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: var(--primary-color, #2563eb);
+    transform: translateY(-5px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+}
+.upload-icon-wrapper {
+    transition: all 0.3s ease;
+}
+.upload-area-premium:hover .upload-icon-wrapper {
+    transform: scale(1.1) rotate(5deg);
+}
+.cursor-pointer { cursor: pointer; }
+</style>

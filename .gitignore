@@ -1,0 +1,111 @@
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ─── Virtual Environments ─────────────────────────────────
+venv/
+ENV/
+env/
+.venv/
+.venv
+
+# ─── IDE & Editor ─────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ─── Flask ────────────────────────────────────────────────
+instance/
+.webassets-cache
+flask_session/
+
+# ─── Testing ──────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ─── Uploads / User Data ──────────────────────────────────
+uploads/
+*.pdf
+*.docx
+*.xlsx
+*.csv
+*.tmp
+
+# ─── ML / AI Models & Data ────────────────────────────────
+*.pkl
+*.pickle
+*.h5
+*.pt
+*.pth
+*.onnx
+*.bin
+*.npy
+*.npz
+models/
+checkpoints/
+*.joblib
+
+# ─── Knowledge Graph ──────────────────────────────────────
+kg/*.json
+kg/*.db
+kg/*.sqlite
+
+# ─── Logs ─────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Environment Variables ────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env
+
+# ─── OS Files ─────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ─── Jupyter Notebooks ────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ─── Docs / Reports (generated) ───────────────────────────
+graph.png
+COMPLETION_REPORT.md
+00_START_HERE.md
+INDEX.md
+INSTALLATION.md
+PROJECT_VERIFICATION.md
+QUICK_REFERENCE.md
+REFACTORING_SUMMARY.md

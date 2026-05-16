@@ -1,0 +1,806 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+    <div id="skillsProfile">
+        <!-- Loading State -->
+        <div class="skills-loading-state">
+            <div class="skills-loading-spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+            </div>
+            <p class="skills-loading-text">Analyzing your skill profile...</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ===== Skills Page Premium Redesign ===== */
+
+    /* Loading Animation */
+    .skills-loading-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 400px;
+        gap: 1.5rem;
+    }
+
+    .skills-loading-spinner {
+        position: relative;
+        width: 60px;
+        height: 60px;
+    }
+
+    .spinner-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 3px solid transparent;
+        animation: spinRing 1.4s ease-in-out infinite;
+    }
+
+    .spinner-ring:nth-child(1) {
+        border-top-color: #2563eb;
+        animation-delay: 0s;
+    }
+
+    .spinner-ring:nth-child(2) {
+        border-right-color: #8b5cf6;
+        animation-delay: 0.15s;
+        inset: 6px;
+    }
+
+    .spinner-ring:nth-child(3) {
+        border-bottom-color: #06b6d4;
+        animation-delay: 0.3s;
+        inset: 12px;
+    }
+
+    @keyframes spinRing {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .skills-loading-text {
+        font-size: 0.95rem;
+        color: var(--text-muted);
+        font-weight: 500;
+        letter-spacing: 0.02em;
+    }
+
+    /* Hero Section */
+    .sp-hero {
+        position: relative;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #0f172a 100%);
+        border-radius: 1.25rem;
+        padding: 3rem 2.5rem;
+        margin-bottom: 2rem;
+        overflow: hidden;
+        color: #fff;
+    }
+
+    .sp-hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -20%;
+        width: 500px;
+        height: 500px;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+        border-radius: 50%;
+        pointer-events: none;
+    }
+
+    .sp-hero::after {
+        content: '';
+        position: absolute;
+        bottom: -30%;
+        left: -10%;
+        width: 400px;
+        height: 400px;
+        background: radial-gradient(circle, rgba(6, 182, 212, 0.12) 0%, transparent 70%);
+        border-radius: 50%;
+        pointer-events: none;
+    }
+
+    .sp-hero-content {
+        position: relative;
+        z-index: 2;
+    }
+
+    .sp-hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: rgba(99, 102, 241, 0.2);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        color: #a5b4fc;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.35rem 0.85rem;
+        border-radius: 50px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 1rem;
+        backdrop-filter: blur(8px);
+    }
+
+    .sp-hero-badge i {
+        font-size: 0.75rem;
+    }
+
+    .sp-hero-title {
+        font-size: 2.25rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.2;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, #fff 0%, #c7d2fe 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .sp-hero-meta {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.75rem;
+    }
+
+    .sp-hero-meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        color: #94a3b8;
+    }
+
+    .sp-hero-meta-item i {
+        color: #60a5fa;
+        font-size: 0.8rem;
+    }
+
+    /* Stats Row */
+    .sp-stats-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .sp-stat-card {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(12px);
+        border-radius: 0.875rem;
+        padding: 1.25rem 1rem;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .sp-stat-card:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.15);
+        transform: translateY(-2px);
+    }
+
+    .sp-stat-value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        line-height: 1;
+        margin-bottom: 0.4rem;
+        background: linear-gradient(135deg, #60a5fa, #a78bfa);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .sp-stat-label {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
+    /* Quick Actions */
+    .sp-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-bottom: 2rem;
+    }
+
+    .sp-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.7rem 1.25rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        font-size: 0.875rem;
+        text-decoration: none;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: none;
+        cursor: pointer;
+    }
+
+    .sp-action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+
+    .sp-action-primary {
+        background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+        color: #fff;
+    }
+
+    .sp-action-primary:hover {
+        color: #fff;
+        box-shadow: 0 8px 25px -5px rgba(37, 99, 235, 0.4);
+    }
+
+    .sp-action-success {
+        background: linear-gradient(135deg, #059669 0%, #0891b2 100%);
+        color: #fff;
+    }
+
+    .sp-action-success:hover {
+        color: #fff;
+        box-shadow: 0 8px 25px -5px rgba(5, 150, 105, 0.4);
+    }
+
+    .sp-action-outline {
+        background: transparent;
+        color: var(--text-color, #1e293b);
+        border: 1.5px solid var(--border-color, #e2e8f0);
+    }
+
+    .sp-action-outline:hover {
+        background: var(--bg-card, #fff);
+        border-color: #2563eb;
+        color: #2563eb;
+    }
+
+    /* Section Headers */
+    .sp-section {
+        margin-bottom: 2.5rem;
+    }
+
+    .sp-section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+    }
+
+    .sp-section-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 0.625rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .sp-section-icon-core {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%);
+        color: #f59e0b;
+    }
+
+    .sp-section-icon-support {
+        background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%);
+        color: #06b6d4;
+    }
+
+    .sp-section-icon-growth {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%);
+        color: #10b981;
+    }
+
+    .sp-section-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--text-color, #1e293b);
+        margin: 0;
+    }
+
+    .sp-section-count {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #94a3b8;
+        background: rgba(148, 163, 184, 0.1);
+        padding: 0.2rem 0.6rem;
+        border-radius: 50px;
+        margin-left: auto;
+    }
+
+    /* Skill Cards */
+    .sp-skill-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 0.875rem;
+    }
+
+    .sp-skill-card {
+        background: var(--bg-card, #fff);
+        border: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
+        border-radius: 0.875rem;
+        padding: 1.1rem 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: default;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .sp-skill-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 3px;
+        height: 100%;
+        border-radius: 3px 0 0 3px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .sp-skill-card:hover {
+        border-color: transparent;
+        box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(99, 102, 241, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .sp-skill-card:hover::before {
+        opacity: 1;
+    }
+
+    .sp-skill-card.sp-card-core::before {
+        background: linear-gradient(180deg, #f59e0b, #eab308);
+    }
+
+    .sp-skill-card.sp-card-support::before {
+        background: linear-gradient(180deg, #06b6d4, #3b82f6);
+    }
+
+    /* Radial Progress */
+    .sp-radial {
+        position: relative;
+        width: 46px;
+        height: 46px;
+        flex-shrink: 0;
+    }
+
+    .sp-radial svg {
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+    }
+
+    .sp-radial-track {
+        fill: none;
+        stroke: var(--score-track, #e5e7eb);
+        stroke-width: 3.5;
+    }
+
+    .sp-radial-bar {
+        fill: none;
+        stroke-width: 3.5;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sp-radial-bar-core {
+        stroke: url(#gradCore);
+    }
+
+    .sp-radial-bar-support {
+        stroke: url(#gradSupport);
+    }
+
+    .sp-radial-value {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--text-color, #1e293b);
+    }
+
+    /* Skill Info */
+    .sp-skill-body {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sp-skill-name {
+        font-weight: 650;
+        font-size: 0.92rem;
+        color: var(--text-color, #1e293b);
+        margin-bottom: 0.2rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sp-skill-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.68rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 50px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+
+    .sp-tag-core {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(245, 158, 11, 0.12) 100%);
+        color: #d97706;
+        border: 1px solid rgba(251, 191, 36, 0.2);
+    }
+
+    .sp-tag-support {
+        background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+        color: #0891b2;
+        border: 1px solid rgba(6, 182, 212, 0.2);
+    }
+
+    /* Linear Progress */
+    .sp-progress-track {
+        height: 5px;
+        background: var(--score-track, #e5e7eb);
+        border-radius: 10px;
+        overflow: hidden;
+        margin-top: 0.5rem;
+    }
+
+    .sp-progress-fill {
+        height: 100%;
+        border-radius: 10px;
+        transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sp-progress-core {
+        background: linear-gradient(90deg, #f59e0b, #eab308);
+    }
+
+    .sp-progress-support {
+        background: linear-gradient(90deg, #06b6d4, #3b82f6);
+    }
+
+    /* Growth Cards */
+    .sp-growth-card {
+        background: var(--bg-card, #fff);
+        border: 1px dashed var(--border-color, rgba(0, 0, 0, 0.1));
+        border-radius: 0.875rem;
+        padding: 1rem 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sp-growth-card:hover {
+        border-color: #10b981;
+        border-style: solid;
+        background: rgba(16, 185, 129, 0.03);
+        transform: translateY(-1px);
+    }
+
+    .sp-growth-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%);
+        color: #10b981;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+
+    .sp-growth-name {
+        font-weight: 600;
+        font-size: 0.88rem;
+        color: var(--text-color, #1e293b);
+    }
+
+    .sp-growth-desc {
+        font-size: 0.75rem;
+        color: var(--text-muted, #94a3b8);
+    }
+
+    .sp-growth-badge {
+        margin-left: auto;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.1);
+        padding: 0.2rem 0.6rem;
+        border-radius: 50px;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        flex-shrink: 0;
+    }
+
+    /* Empty State */
+    .sp-empty {
+        text-align: center;
+        padding: 5rem 2rem;
+        max-width: 480px;
+        margin: 0 auto;
+    }
+
+    .sp-empty-icon {
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(124, 58, 237, 0.08) 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        font-size: 2.5rem;
+        color: #6366f1;
+    }
+
+    .sp-empty-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text-color, #1e293b);
+        margin-bottom: 0.5rem;
+        letter-spacing: -0.02em;
+    }
+
+    .sp-empty-text {
+        font-size: 0.95rem;
+        color: var(--text-muted, #64748b);
+        margin-bottom: 1.75rem;
+        line-height: 1.6;
+    }
+
+    .sp-empty-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.8rem 1.75rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        font-size: 0.95rem;
+        background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+        color: #fff;
+        text-decoration: none;
+        transition: all 0.3s ease;
+        border: none;
+    }
+
+    .sp-empty-btn:hover {
+        color: #fff;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.35);
+    }
+
+    /* Confidence Breakdown Summary */
+    .sp-confidence-bar-wrap {
+        background: var(--bg-card, #fff);
+        border: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
+        border-radius: 0.875rem;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .sp-conf-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .sp-conf-title {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--text-color, #1e293b);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .sp-conf-avg {
+        font-size: 0.85rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .sp-conf-breakdown {
+        display: flex;
+        gap: 0.5rem;
+        height: 8px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--score-track, #e5e7eb);
+    }
+
+    .sp-conf-seg {
+        border-radius: 10px;
+        transition: width 1s ease;
+    }
+
+    .sp-conf-legend {
+        display: flex;
+        gap: 1.25rem;
+        margin-top: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .sp-conf-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.75rem;
+        color: var(--text-muted, #64748b);
+    }
+
+    .sp-conf-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    /* Fade-in Animation */
+    .sp-fade-in {
+        opacity: 0;
+        transform: translateY(12px);
+        animation: spFadeIn 0.5s ease forwards;
+    }
+
+    @keyframes spFadeIn {
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Dark Mode */
+    [data-theme="dark"] .sp-hero {
+        background: linear-gradient(135deg, #0c0f1a 0%, #131832 40%, #0c0f1a 100%);
+    }
+
+    [data-theme="dark"] .sp-skill-card {
+        background: rgba(30, 41, 59, 0.6);
+        border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    [data-theme="dark"] .sp-skill-card:hover {
+        background: rgba(30, 41, 59, 0.9);
+        box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(99, 102, 241, 0.15);
+    }
+
+    [data-theme="dark"] .sp-skill-name {
+        color: #f1f5f9;
+    }
+
+    [data-theme="dark"] .sp-radial-value {
+        color: #f1f5f9;
+    }
+
+    [data-theme="dark"] .sp-growth-card {
+        background: rgba(30, 41, 59, 0.4);
+        border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    [data-theme="dark"] .sp-growth-card:hover {
+        background: rgba(16, 185, 129, 0.05);
+        border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    [data-theme="dark"] .sp-confidence-bar-wrap {
+        background: rgba(30, 41, 59, 0.5);
+        border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    [data-theme="dark"] .sp-section-header {
+        border-bottom-color: rgba(255, 255, 255, 0.06);
+    }
+
+    [data-theme="dark"] .sp-tag-core {
+        background: rgba(251, 191, 36, 0.1);
+        color: #fbbf24;
+        border-color: rgba(251, 191, 36, 0.2);
+    }
+
+    [data-theme="dark"] .sp-tag-support {
+        background: rgba(6, 182, 212, 0.1);
+        color: #22d3ee;
+        border-color: rgba(6, 182, 212, 0.2);
+    }
+
+    [data-theme="dark"] .sp-action-outline {
+        color: #e2e8f0;
+        border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    [data-theme="dark"] .sp-action-outline:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: #6366f1;
+        color: #a5b4fc;
+    }
+
+    [data-theme="dark"] .sp-empty-icon {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(124, 58, 237, 0.12) 100%);
+    }
+
+    [data-theme="dark"] .sp-radial-track {
+        stroke: rgba(255, 255, 255, 0.08);
+    }
+
+    [data-theme="dark"] .sp-progress-track {
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    [data-theme="dark"] .sp-conf-breakdown {
+        background: rgba(255, 255, 255, 0.06);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .sp-hero {
+            padding: 2rem 1.5rem;
+        }
+
+        .sp-hero-title {
+            font-size: 1.65rem;
+        }
+
+        .sp-skill-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .sp-actions {
+            flex-direction: column;
+        }
+
+        .sp-action-btn {
+            justify-content: center;
+        }
+    }
+</style>
+
+<!-- SVG Gradient Definitions (shared across radials) -->
+<svg width="0" height="0" style="position:absolute">
+    <defs>
+        <linearGradient id="gradCore" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#f59e0b"/>
+            <stop offset="100%" style="stop-color:#eab308"/>
+        </linearGradient>
+        <linearGradient id="gradSupport" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#06b6d4"/>
+            <stop offset="100%" style="stop-color:#3b82f6"/>
+        </linearGradient>
+    </defs>
+</svg>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        if (typeof loadEnhancedSkillsProfile === 'function') {
+            loadEnhancedSkillsProfile();
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,110 @@
+<footer class="footer mt-auto py-5 bg-dark position-relative overflow-hidden" style="background: linear-gradient(180deg, #111827 0%, #000 100%);">
+    <!-- Subtle Gradient Ornament -->
+    <div class="position-absolute top-0 start-0 w-100 h-100" style="background: radial-gradient(circle at 10% 20%, rgba(37, 99, 235, 0.05) 0%, transparent 40%); pointer-events: none;"></div>
+
+    <div class="container position-relative z-1">
+        <div class="row g-5">
+            <!-- Brand -->
+            <div class="col-lg-4 col-md-12">
+                <div class="d-flex align-items-center mb-4">
+                    <div class="bg-primary p-2 rounded-3 me-3 shadow-sm">
+                        <i class="bi bi-cpu-fill text-white fs-4"></i>
+                    </div>
+                    <h5 class="text-uppercase fw-bold mb-0 text-white letter-spacing-1">Job Match AI</h5>
+                </div>
+                <p class="text-white-50 mb-4 lh-lg">
+                    Next-generation career intelligence platform. Leverage the power of Knowledge Graphs and AI to find your dream role and optimize your professional profile.
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="#" class="social-link"><i class="bi bi-facebook"></i></a>
+                    <a href="#" class="social-link"><i class="bi bi-twitter"></i></a>
+                    <a href="#" class="social-link"><i class="bi bi-linkedin"></i></a>
+                    <a href="#" class="social-link"><i class="bi bi-github"></i></a>
+                </div>
+            </div>
+
+            <!-- Features -->
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="text-white fw-bold text-uppercase mb-4 small letter-spacing-2">Solutions</h6>
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2"><a href="{{ url_for('upload_page') }}" class="footer-link">AI CV Scan</a></li>
+                    <li class="mb-2"><a href="{{ url_for('cv_builder') }}" class="footer-link">CV Builder</a></li>
+                    <li class="mb-2"><a href="{{ url_for('search_page') }}" class="footer-link">Job Search</a></li>
+                    <li class="mb-2"><a href="{{ url_for('stats_page') }}" class="footer-link">Market Insights</a></li>
+                </ul>
+            </div>
+
+            <!-- Company -->
+            <div class="col-lg-2 col-md-4 col-6">
+                <h6 class="text-white fw-bold text-uppercase mb-4 small letter-spacing-2">Resources</h6>
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2"><a href="#" class="footer-link">Privacy Policy</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">Terms of Service</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">AI Methodology</a></li>
+                    <li class="mb-2"><a href="#" class="footer-link">Help Center</a></li>
+                </ul>
+            </div>
+
+            <!-- Contact -->
+            <div class="col-lg-4 col-md-4">
+                <h6 class="text-white fw-bold text-uppercase mb-4 small letter-spacing-2">Get in Touch</h6>
+                <div class="mb-3 d-flex align-items-start">
+                    <i class="bi bi-envelope-fill me-3 text-primary"></i>
+                    <div class="small">
+                        <span class="d-block text-white-50 mb-1">Email support:</span>
+                        <a href="mailto:ngocnt.22itb@vku.udn.vn" class="text-white text-decoration-none">ngocnt.22itb@vku.udn.vn</a>
+                    </div>
+                </div>
+                <div class="mb-3 d-flex align-items-start">
+                    <i class="bi bi-geo-alt-fill me-3 text-primary"></i>
+                    <div class="small">
+                        <span class="d-block text-white-50 mb-1">Headquarters:</span>
+                        <span class="text-white">Ngu Hanh Son District, Da Nang City</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-5 pt-4 border-top border-secondary border-opacity-25 d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+            <p class="text-white-50 small mb-0">
+                © 2026 Job Match AI. Built with precision for the future of work.
+            </p>
+            <div class="d-flex gap-4">
+                <span class="text-white-50 small"><i class="bi bi-shield-check text-success me-1"></i> SSL Secure</span>
+                <span class="text-white-50 small"><i class="bi bi-lightning-charge-fill text-warning me-1"></i> Fast Analysis</span>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<style>
+.social-link {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.7);
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+.social-link:hover {
+    background: var(--primary-color, #2563eb);
+    color: white;
+    transform: translateY(-3px);
+}
+.footer-link {
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+}
+.footer-link:hover {
+    color: white;
+    padding-left: 5px;
+}
+.letter-spacing-1 { letter-spacing: 1px; }
+.letter-spacing-2 { letter-spacing: 2px; }
+</style>

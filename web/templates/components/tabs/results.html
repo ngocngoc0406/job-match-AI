@@ -1,0 +1,20 @@
+<div class="tab-pane fade" id="results" role="tabpanel">
+    <h3 class="fw-bold mb-4">Job Matches</h3>
+    <div id="resultsListContainer">
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-muted">Loading your personalized job matches...</p>
+            <div class="mt-3">
+                <small class="text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Tip: Upload a CV first to see AI-powered recommendations
+                </small>
+            </div>
+            <a class="btn btn-outline-primary btn-sm mt-3" href="{{ url_for('upload_page') }}">
+                <i class="bi bi-upload me-1"></i>Upload CV
+            </a>
+        </div>
+    </div>
+</div>
