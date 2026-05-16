@@ -56,7 +56,7 @@ coverage.xml
 uploads/
 *.pdf
 *.docx
-*.xlsx
+# *.xlsx
 *.csv
 *.tmp
 
