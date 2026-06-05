@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadDashboardMockData();
 
     // Check local storage for auth state
-    if (localStorage.getItem('isLoggedIn') === 'true') {
+    if (sessionStorage.getItem('isLoggedIn') === 'true') {
         setAuthState(true);
     }
 
@@ -135,11 +135,11 @@ function setAuthState(isLoggedIn) {
     const userProfile = document.getElementById('userProfile');
 
     if (isLoggedIn) {
-        localStorage.setItem('isLoggedIn', 'true');
+        sessionStorage.setItem('isLoggedIn', 'true');
         authButtons.classList.add('d-none');
         userProfile.classList.remove('d-none');
     } else {
-        localStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('isLoggedIn');
         authButtons.classList.remove('d-none');
         userProfile.classList.add('d-none');
     }

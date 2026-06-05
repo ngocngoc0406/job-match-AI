@@ -1,12 +1,38 @@
 from utils.text_processing import norm_text, role_sim, exp_sim, location_match_score
 from scoring.xai import explain_user_job
 from scoring.skill_variants import detect_domain
+import numpy as np
+
+# ─── LambdaMART Integration ──────────────────────────────────────────────────
+# Try to load the trained LambdaMART model at import time.
+# If available, use learned weights instead of fixed weights.
+# Falls back to fixed weights if no model exists.
+_LAMBDAMART_MODEL = None
+_LAMBDAMART_FEATURES = None
+
+def _load_lambdamart():
+    """Load LambdaMART model (lazy, called once)."""
+    global _LAMBDAMART_MODEL, _LAMBDAMART_FEATURES
+    try:
+        from scoring.weight_learner import load_model
+        _LAMBDAMART_MODEL, _LAMBDAMART_FEATURES = load_model()
+        if _LAMBDAMART_MODEL is not None:
+            print("[SCORING] LambdaMART model loaded — using LEARNED weights")
+        else:
+            print("[SCORING] No LambdaMART model found — using FIXED weights")
+    except Exception as e:
+        print(f"[SCORING] LambdaMART unavailable ({e}) — using FIXED weights")
+
+_load_lambdamart()
 
 def user_job_score(user_prob, user_city, user_detail, job_node, job_info, 
                    IDX, X, cv_vec, tfidf, user_role_can, user_exp_bucket,
                    pseudo_text="", user_raw2can_best=None, user_raw2can_map=None,
                    cv_domain="general"):
-    """Calculate user-job match score"""
+    """Calculate user-job match score.
+    
+    Uses LambdaMART model if available, otherwise falls back to fixed weights.
+    """
     if job_node not in job_info:
         return 0.0, {"error": "job_not_in_job_info"}
 
@@ -29,10 +55,19 @@ def user_job_score(user_prob, user_city, user_detail, job_node, job_info,
     i = IDX[job_node]
     if pseudo_text:
         from sklearn.preprocessing import normalize
-        pseudo_vec = normalize(tfidf.transform([norm_text(pseudo_text)]))
-        s_text = float((pseudo_vec @ X[i].T).sum())
+        if hasattr(tfidf, 'encode'):
+            pseudo_vec = normalize(tfidf.encode([norm_text(pseudo_text)]))
+        else:
+            pseudo_vec = normalize(tfidf.transform([norm_text(pseudo_text)]))
+        if hasattr(pseudo_vec, 'toarray'):
+            s_text = float((pseudo_vec @ X[i].T).sum())
+        else:
+            s_text = float(np.dot(pseudo_vec[0], X[i]))
     else:
-        s_text = float((cv_vec @ X[i].T).sum())
+        if hasattr(cv_vec, 'toarray'):
+            s_text = float((cv_vec @ X[i].T).sum())
+        else:
+            s_text = float(np.dot(cv_vec[0], X[i]))
 
     s_loc, ex_loc = location_match_score(
         user_city, user_detail,
@@ -47,33 +82,55 @@ def user_job_score(user_prob, user_city, user_detail, job_node, job_info,
     except:
         s_sal = 0.0
 
-    W = {
-        'skill': 0.40,
-        'role': 0.20,
-        'exp': 0.15,
-        'location': 0.15,
-        'text': 0.10,
-        'sal': 0.00, # Handled as extra or ignored for now
-    }
-
-    score = (
-        W['skill'] * s_skill +
-        W['text'] * s_text +
-        W['location'] * s_loc +
-        W['role'] * s_role +
-        W['exp'] * s_exp +
-        W['sal'] * s_sal
-    )
-
-    # Domain Filtering logic
+    # Domain detection for features
     job_text = f"{job['title']} {job.get('description', '')} {job.get('requirements', '')}"
     job_domain = detect_domain(job_text)
+
+    # ─── Score calculation ────────────────────────────────────────────────
+    scoring_method = "fixed"
     
-    if cv_domain != "general" and job_domain != "general":
-        # Check for cross-domain mismatch
-        if cv_domain != job_domain:
-            # Moderate penalty for cross-domain noise (allowing for career shifts)
-            score *= 0.60
+    if _LAMBDAMART_MODEL is not None:
+        # Use LambdaMART learned model
+        try:
+            from scoring.weight_learner import extract_features, predict_score
+            
+            features = extract_features(
+                s_skill=s_skill, s_text=s_text, s_loc=s_loc,
+                s_role=s_role, s_exp=s_exp, s_sal=s_sal,
+                explain_data=xai, cv_domain=cv_domain, job_domain=job_domain
+            )
+            
+            score = predict_score(_LAMBDAMART_MODEL, features)
+            scoring_method = "lambdamart"
+        except Exception as e:
+            # Fallback to fixed weights on any error
+            score = None
+            scoring_method = "fixed"
+    
+    if scoring_method == "fixed":
+        # Fixed linear weights (original method)
+        W = {
+            'skill': 0.40,
+            'role': 0.20,
+            'exp': 0.15,
+            'location': 0.15,
+            'text': 0.10,
+            'sal': 0.00,
+        }
+
+        score = (
+            W['skill'] * s_skill +
+            W['text'] * s_text +
+            W['location'] * s_loc +
+            W['role'] * s_role +
+            W['exp'] * s_exp +
+            W['sal'] * s_sal
+        )
+
+        # Domain Filtering logic (only for fixed weights — LambdaMART handles this via features)
+        if cv_domain != "general" and job_domain != "general":
+            if cv_domain != job_domain:
+                score *= 0.60
 
     explain = {
         "components": {
@@ -94,6 +151,7 @@ def user_job_score(user_prob, user_city, user_detail, job_node, job_info,
             "job_role": job["role_can"],
             "exp_bucket": job["exp_bucket"],
             "sal_bucket": job["sal_bucket"],
+            "scoring_method": scoring_method,
         }
     }
 

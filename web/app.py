@@ -650,8 +650,11 @@ def upload_files():
             user_exp_min, user_exp_max, _ = parse_year_range(cv_text)
             user_state['user_exp_bucket'] = exp_bucket(user_exp_min, user_exp_max) if user_exp_min is not None else "Exp_Unknown"
 
-            # 5. Transform CV text to TF-IDF
-            cv_vec = normalize(tfidf.transform([norm_text(cv_text)]))
+            # 5. Transform CV text to TF-IDF or Embeddings
+            if hasattr(tfidf, 'encode'):
+                cv_vec = normalize(tfidf.encode([norm_text(cv_text)]))
+            else:
+                cv_vec = normalize(tfidf.transform([norm_text(cv_text)]))
             user_state['cv_vec'] = cv_vec
 
             # 6. Compute user-job match scores
@@ -2176,13 +2179,22 @@ def init_application():
         valid_job_nodes = [j for j in job_nodes if j in job_info]
         texts = [job_info[j]["text"] for j in valid_job_nodes]
         
-        tfidf = TfidfVectorizer(
-            analyzer="char_wb", ngram_range=(3, 5),
-            min_df=1, max_df=1.0, max_features=12000,
-            sublinear_tf=True, lowercase=True
-        )
-        X = tfidf.fit_transform(texts)
-        X = normalize(X)
+        try:
+            from sentence_transformers import SentenceTransformer
+            print("[INFO] Loading SentenceTransformer model (this may take a moment)...", flush=True)
+            tfidf = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            print("[INFO] Embedding job texts...", flush=True)
+            X_dense = tfidf.encode(texts, show_progress_bar=False)
+            X = normalize(X_dense)
+        except ImportError:
+            print("[WARN] sentence-transformers not installed. Falling back to TF-IDF.", flush=True)
+            tfidf = TfidfVectorizer(
+                analyzer="char_wb", ngram_range=(3, 5),
+                min_df=1, max_df=1.0, max_features=12000,
+                sublinear_tf=True, lowercase=True
+            )
+            X = tfidf.fit_transform(texts)
+            X = normalize(X)
         
         app_state['tfidf'] = tfidf
         app_state['X'] = X

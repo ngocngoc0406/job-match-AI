@@ -11,3 +11,8 @@ pytesseract
 Pillow
 Werkzeug
 matplotlib
+lightgbm
+sentence-transformers
+optuna
+plotly
+kaleido
