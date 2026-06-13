@@ -15,8 +15,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize
 import matplotlib
 matplotlib.use('Agg') # Non-interactive backend
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 
 from config import (
     TOPK_USER_JOB, CORE_SKILLS_CANON, SIM_THRESHOLD, 
@@ -40,6 +38,7 @@ import networkx as nx
 from networkx.readwrite import json_graph
 import time
 import secrets
+from services.ollama_client import get_ollama_client
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
@@ -1088,11 +1087,10 @@ def graph_data():
         score_values = list(job_scores.values())
         min_score = min(score_values) if score_values else 0.0
         max_score = max(score_values) if score_values else 1.0
-        cmap = plt.get_cmap('YlOrRd')
 
-        # Use Normalize for mapping, but to guarantee monotonic perceived darkness
-        # we'll interpolate between a light and dark color in RGB space.
+        from matplotlib import cm
         from matplotlib.colors import Normalize
+        cmap = cm.get_cmap('YlOrRd')
         norm = Normalize(vmin=min_score, vmax=max_score) if max_score > min_score else Normalize(vmin=0.0, vmax=1.0)
 
         nodes = []
@@ -1408,9 +1406,423 @@ QUESTION_ORDER = [
     'technical_design', 'teamwork', 'growth', 'motivation', 'leadership', 'wrapup'
 ]
 
+def _build_interview_context(user_state, target_job, user_role, user_skills, analysis, turn_count):
+    top_skills = ", ".join(user_skills[:8]) if user_skills else "not detected"
+    missing_skills = []
+    match_score = 0
+    if user_state.get('scores'):
+        best_job, match_score, explain = user_state['scores'][0]
+        evidence = explain.get('evidence', {}) if isinstance(explain, dict) else {}
+        skill_evidence = evidence.get('skill', {}) if isinstance(evidence, dict) else {}
+        missing = skill_evidence.get('missing_skills', []) if isinstance(skill_evidence, dict) else []
+        for item in missing[:5]:
+            if isinstance(item, dict):
+                missing_skills.append(str(item.get('skill') or item.get('name') or item))
+            else:
+                missing_skills.append(str(item))
+
+    return {
+        "candidate_role": user_role,
+        "target_job": target_job,
+        "match_score_percent": round(float(match_score) * 100, 1) if match_score else 0,
+        "candidate_skills": top_skills,
+        "missing_skills": ", ".join(missing_skills) if missing_skills else "not available",
+        "turn_count": turn_count,
+        "answer_analysis": analysis or {},
+    }
+
+
+def _interview_user_intent(user_msg):
+    """Route chat messages that are asking for CV/job advice instead of interview practice."""
+    text = norm_text(user_msg or "")
+    if not text or text == "init_interview":
+        return "interview"
+
+    out_of_scope_terms = [
+        "thoi tiet", "du bao thoi tiet", "nhiet do", "mua khong", "nang khong",
+        "hom nay an gi", "an gi", "mon gi", "nau gi", "quan an", "di dau choi",
+        "bong da", "ti so", "ty so", "xem phim", "nghe nhac", "tin tuc",
+        "gia vang", "bitcoin", "crypto", "chung khoan", "xem boi", "tu vi",
+    ]
+    in_scope_terms = [
+        "cv", "job", "viec", "cong viec", "ung tuyen", "phong van", "interview",
+        "skill", "ky nang", "ki nang", "hoc", "lo trinh", "roadmap", "du an",
+        "project", "backend", "frontend", "full stack", "fullstack", "java",
+        "python", "react", "node", "spring", "sql", "ai", "data", "career",
+        "nghe nghiep", "luong", "jd", "ho so", "profile",
+    ]
+    skill_gap_terms = [
+        "thieu skill", "thieu ky nang", "can hoc gi", "bo sung gi",
+        "skill nao", "ky nang nao", "ki nang nao", "ky nao", "ki nao",
+        "can cai thien", "cai thien gi", "hoc them gi", "nen hoc gi",
+        "gap", "missing skill",
+    ]
+    job_fit_terms = [
+        "phu hop voi cong viec gi", "hop voi cong viec gi", "cong viec nao",
+        "viec nao phu hop", "job nao", "vi tri nao", "phu hop vi tri nao",
+        "nen ung tuyen", "recommend", "goi y cong viec",
+    ]
+    cv_advice_terms = [
+        "cv cua toi", "sua cv", "cai thien cv", "tu van cv",
+        "nen viet gi", "profile cua toi", "ho so cua toi",
+    ]
+    career_terms = [
+        "toi muon theo", "muon theo huong", "muon lam", "dinh huong",
+        "lo trinh", "roadmap", "hoc gi de", "can hoc", "chuyen huong",
+        "full stack", "fullstack", "frontend", "backend", "java",
+        "web", "website", "developer",
+    ]
+    ai_terms = [
+        " ai", "ai ", "tri tue nhan tao", "artificial intelligence",
+        "machine learning", "ml", "deep learning", "llm", "rag",
+        "computer vision", "nlp",
+    ]
+
+    has_out_of_scope = any(term in text for term in out_of_scope_terms)
+    has_in_scope = any(term in text for term in in_scope_terms)
+    if has_out_of_scope and not has_in_scope:
+        return "out_of_scope"
+
+    wants_ai = any(term in f" {text} " for term in ai_terms)
+    wants_advice = any(term in text for term in skill_gap_terms + cv_advice_terms + job_fit_terms)
+    if wants_ai and wants_advice:
+        return "ai_advice"
+    if text.strip() in {"ai", "ml", "llm", "rag"}:
+        return "ai_advice"
+    if any(term in text for term in career_terms):
+        return "career_advice"
+    if any(term in text for term in job_fit_terms):
+        return "job_fit"
+    if any(term in text for term in skill_gap_terms):
+        return "skill_gap"
+    if any(term in text for term in cv_advice_terms):
+        return "cv_advice"
+    return "interview"
+
+
+def _skill_names(items, limit=5):
+    names = []
+    for item in items or []:
+        if isinstance(item, dict):
+            name = item.get("skill") or item.get("name")
+        else:
+            name = str(item)
+        if name and name not in names:
+            names.append(name)
+        if len(names) >= limit:
+            break
+    return names
+
+
+def _top_match_snapshots(user_state, limit=3):
+    snapshots = []
+    for rank, (job_node, score, explain) in enumerate((user_state.get("scores") or [])[:limit], start=1):
+        info = app_state.get("job_info", {}).get(job_node, {})
+        evidence = explain.get("evidence", {}) if isinstance(explain, dict) else {}
+        skill_evidence = evidence.get("skill", {}) if isinstance(evidence, dict) else {}
+        snapshots.append({
+            "rank": rank,
+            "title": info.get("title", "Unknown"),
+            "company": info.get("company", "N/A"),
+            "city": info.get("city", "Unknown"),
+            "score": round(float(score or 0) * 100, 1),
+            "matched": _skill_names(skill_evidence.get("matched_skills"), 5),
+            "missing": _skill_names(skill_evidence.get("missing_skills"), 5),
+        })
+    return snapshots
+
+
+CAREER_ROADMAPS = {
+    "fullstack": [
+        ("Frontend nền tảng", "HTML/CSS responsive, JavaScript/TypeScript, React component/state/API call."),
+        ("Backend Java", "Java core, Spring Boot, REST API, validation, exception handling."),
+        ("Database", "SQL, schema design, JOIN, index cơ bản, transaction."),
+        ("Integration", "JWT auth, upload file, phân quyền, gọi API frontend-backend."),
+        ("Deployment", "Docker cơ bản, env config, deploy một app full-stack hoàn chỉnh."),
+    ],
+    "frontend": [
+        ("JavaScript/TypeScript", "Nắm async/await, fetch API, module, typing cơ bản."),
+        ("React", "Component, hooks, state, routing, form validation."),
+        ("UI/CSS", "Responsive layout, Bootstrap/Tailwind, accessibility cơ bản."),
+        ("API integration", "Gọi REST API, xử lý loading/error/empty state."),
+    ],
+    "backend": [
+        ("Java/Spring Boot", "REST controller, service, repository, validation, security cơ bản."),
+        ("SQL", "Thiết kế bảng, query, transaction, index."),
+        ("API quality", "Pagination, filtering, error response, logging."),
+        ("Deployment", "Docker, config theo môi trường, kiểm thử API."),
+    ],
+}
+
+
+def _infer_career_track(user_msg):
+    text = norm_text(user_msg or "")
+    if "full stack" in text or "fullstack" in text or ("frontend" in text and "backend" in text):
+        return "fullstack"
+    if "frontend" in text:
+        return "frontend"
+    if "backend" in text or "java" in text:
+        return "backend"
+    return "general"
+
+
+def _build_out_of_scope_reply():
+    return (
+        "Xin lỗi, câu hỏi này nằm ngoài phạm vi của Job Match AI. "
+        "Mình chỉ hỗ trợ các nội dung liên quan đến CV, kỹ năng, JD, gợi ý công việc, "
+        "lộ trình học, phỏng vấn và cải thiện hồ sơ ứng tuyển. "
+        "Bạn vui lòng hỏi đúng trọng tâm dự án nhé."
+    )
+
+
+def _build_career_advisory_reply(user_state, user_msg):
+    user_role = user_state.get("user_role_can", "Unknown")
+    user_skills = set((user_state.get("user_prob") or {}).keys())
+    top_matches = _top_match_snapshots(user_state, limit=2)
+    track = _infer_career_track(user_msg)
+
+    if track == "general":
+        return _build_interview_advisory_reply(user_state, "cv_advice")
+
+    roadmap = CAREER_ROADMAPS[track]
+    existing = []
+    missing = []
+    for skill, why in roadmap:
+        skill_norm = norm_text(skill)
+        has_skill = any(norm_text(s) in skill_norm or skill_norm in norm_text(s) for s in user_skills)
+        if has_skill:
+            existing.append(skill)
+        else:
+            missing.append((skill, why))
+
+    track_label = {
+        "fullstack": "Full-stack Web Developer",
+        "frontend": "Frontend Developer",
+        "backend": "Backend Java Developer",
+    }[track]
+
+    lines = [
+        f"Bạn có thể đi theo hướng **{track_label}**, nhưng nên trình bày rõ trong CV để hệ thống/JD không hiểu bạn chỉ là **{user_role}**.",
+    ]
+    if top_matches:
+        best = top_matches[0]
+        lines.append(
+            f"Hiện job match cao nhất là **{best['title']}** ({best['score']}%). "
+            f"Điểm mạnh đang thấy: {', '.join(best['matched'][:4]) if best['matched'] else 'chưa rõ'}."
+        )
+
+    if existing:
+        lines.append(f"\nKỹ năng đã có tín hiệu: {', '.join(existing[:4])}.")
+
+    lines.append("\nNên bổ sung/nhấn mạnh theo thứ tự:")
+    for idx, (skill, why) in enumerate(missing[:5], start=1):
+        lines.append(f"{idx}. **{skill}**: {why}")
+
+    if track == "fullstack":
+        lines.append(
+            "\nProject nên thêm vào CV: một website full-stack dùng **React + Spring Boot/Java + SQL**, "
+            "có đăng nhập JWT, CRUD, tìm kiếm/lọc, upload file hoặc dashboard. "
+            "Ghi rõ bạn làm cả frontend, backend, database và deploy."
+        )
+    elif track == "frontend":
+        lines.append(
+            "\nProject nên thêm vào CV: dashboard hoặc job-search UI gọi API thật, có responsive, loading/error state và form validation."
+        )
+    else:
+        lines.append(
+            "\nProject nên thêm vào CV: REST API Java/Spring Boot có database, auth, phân quyền, test API và Docker."
+        )
+
+    return "\n".join(lines)
+
+
+AI_SKILL_ROADMAP = [
+    ("Python", "Nền tảng bắt buộc để xử lý dữ liệu, train/inference model và viết demo AI."),
+    ("SQL", "Cần cho Data/AI vì dữ liệu thường nằm trong database, phải biết query và chuẩn bị dữ liệu."),
+    ("Data Science", "Bao gồm pandas, numpy, thống kê cơ bản và đánh giá mô hình."),
+    ("Deep Learning", "Nền tảng cho CV, NLP, LLM; nên biết CNN/RNN/Transformer ở mức ứng dụng."),
+    ("PyTorch", "Framework phổ biến để xây dựng và fine-tune model AI."),
+    ("TensorFlow", "Hữu ích nếu JD yêu cầu production hoặc ecosystem TensorFlow/Keras."),
+    ("NLP", "Phù hợp nếu bạn muốn làm chatbot, text classification, information extraction."),
+    ("Computer Vision", "Phù hợp nếu bạn muốn làm xử lý ảnh, detection, OCR, camera AI."),
+    ("LLM", "Nên biết prompt, function calling/tool use, đánh giá output và giới hạn hallucination."),
+    ("RAG", "Rất thực tế cho đồ án/doanh nghiệp: embedding, vector database, retrieval, reranking."),
+    ("MLOps", "Triển khai model, API inference, monitoring và quản lý version model/dataset."),
+]
+
+
+def _ai_related_job_snapshots(user_state, limit=3):
+    ai_roles = {"AI Engineer", "Data Scientist", "Data Engineer", "Data Analyst", "Software Engineer", "Backend Developer"}
+    ai_terms = ["ai", "artificial intelligence", "machine learning", "deep learning", "llm", "rag", "nlp", "computer vision"]
+    snapshots = []
+    for job_node, score, explain in (user_state.get("scores") or []):
+        info = app_state.get("job_info", {}).get(job_node, {})
+        text = norm_text(f"{info.get('title', '')} {info.get('description', '')} {info.get('requirements', '')}")
+        role = info.get("role_can", "")
+        if role not in ai_roles and not any(term in text for term in ai_terms):
+            continue
+        evidence = explain.get("evidence", {}) if isinstance(explain, dict) else {}
+        skill_evidence = evidence.get("skill", {}) if isinstance(evidence, dict) else {}
+        snapshots.append({
+            "title": info.get("title", "Unknown"),
+            "company": info.get("company", "N/A"),
+            "score": round(float(score or 0) * 100, 1),
+            "matched": _skill_names(skill_evidence.get("matched_skills"), 4),
+            "missing": _skill_names(skill_evidence.get("missing_skills"), 5),
+        })
+        if len(snapshots) >= limit:
+            break
+    return snapshots
+
+
+def _build_ai_advisory_reply(user_state):
+    user_skills = set((user_state.get("user_prob") or {}).keys())
+    existing_ai = [skill for skill in user_skills if skill in {name for name, _ in AI_SKILL_ROADMAP}]
+    recommended = [(skill, why) for skill, why in AI_SKILL_ROADMAP if skill not in user_skills]
+    ai_jobs = _ai_related_job_snapshots(user_state, limit=3)
+
+    lines = []
+    if existing_ai:
+        lines.append(f"CV của bạn đã có tín hiệu liên quan AI/Data: {', '.join(existing_ai[:6])}.")
+    else:
+        lines.append("CV của bạn chưa thể hiện rõ hướng AI. Nếu bạn muốn đi AI, cần bổ sung project và keyword AI cụ thể.")
+
+    if ai_jobs:
+        lines.append("\nCác job AI/Data/Software gần nhất trong hệ thống:")
+        for idx, job in enumerate(ai_jobs, start=1):
+            missing = ", ".join(job["missing"][:3]) if job["missing"] else "ít gap chính"
+            matched = ", ".join(job["matched"][:3]) if job["matched"] else "chưa rõ"
+            lines.append(
+                f"{idx}. **{job['title']}** - {job['company']} ({job['score']}%)\n"
+                f"   Match: {matched}. Nên bổ sung: {missing}."
+            )
+
+    lines.append("\nNếu mục tiêu là AI Engineer/AI Backend, nên ưu tiên cải thiện:")
+    for idx, (skill, why) in enumerate(recommended[:6], start=1):
+        lines.append(f"{idx}. **{skill}**: {why}")
+
+    lines.append(
+        "\nProject nên đưa vào CV: xây chatbot RAG cho tài liệu PDF/JD, phân loại CV-job match, "
+        "hoặc Computer Vision demo. Mỗi project nên ghi rõ dataset, model/framework, API/demo, và kết quả đo được."
+    )
+    return "\n".join(lines)
+
+
+def _build_interview_advisory_reply(user_state, intent):
+    user_role = user_state.get("user_role_can", "Unknown")
+    user_skills = list((user_state.get("user_prob") or {}).keys())
+
+    if intent == "out_of_scope":
+        return _build_out_of_scope_reply()
+    if isinstance(intent, tuple) and intent[0] == "career_advice":
+        return _build_career_advisory_reply(user_state, intent[1])
+
+    top_matches = _top_match_snapshots(user_state, limit=3)
+
+    if not top_matches:
+        return (
+            "Mình chưa có kết quả matching để tư vấn chính xác. "
+            "Bạn hãy upload/scan CV trước, sau đó mình sẽ chỉ ra job phù hợp, skill còn thiếu và hướng cải thiện CV."
+        )
+
+    best = top_matches[0]
+    lines = []
+
+    if intent == "ai_advice":
+        return _build_ai_advisory_reply(user_state)
+
+    if intent == "skill_gap":
+        missing = best["missing"] or []
+        if missing:
+            lines.append(f"Với job phù hợp nhất hiện tại là **{best['title']}** ({best['score']}%), CV của bạn nên bổ sung trước:")
+            for idx, skill in enumerate(missing[:5], start=1):
+                lines.append(f"{idx}. **{skill}**")
+        else:
+            lines.append(f"Với job **{best['title']}**, hệ thống chưa thấy skill gap lớn từ dữ liệu hiện tại.")
+        if best["matched"]:
+            lines.append(f"\nĐiểm mạnh đang có: {', '.join(best['matched'][:5])}.")
+        lines.append("\nƯu tiên cải thiện CV: thêm project thật, công nghệ đã dùng, vai trò cá nhân và kết quả đo được.")
+        return "\n".join(lines)
+
+    if intent == "job_fit":
+        lines.append(f"Dựa trên CV, role nhận diện là **{user_role}**. Các công việc phù hợp nhất hiện tại:")
+        for item in top_matches:
+            matched = ", ".join(item["matched"][:3]) if item["matched"] else "chưa rõ skill match"
+            missing = ", ".join(item["missing"][:3]) if item["missing"] else "ít gap chính"
+            lines.append(
+                f"{item['rank']}. **{item['title']}** - {item['company']} ({item['score']}%, {item['city']})\n"
+                f"   Match: {matched}. Cần bổ sung: {missing}."
+            )
+        lines.append("\nKhuyến nghị: ưu tiên ứng tuyển job top 1-3, đồng thời chỉnh CV theo đúng từ khóa trong JD.")
+        return "\n".join(lines)
+
+    lines.append(f"CV của bạn đang được hệ thống hiểu là **{user_role}**.")
+    if user_skills:
+        lines.append(f"Skill nổi bật: {', '.join(user_skills[:8])}.")
+    lines.append(f"Job phù hợp nhất: **{best['title']}** ({best['score']}%).")
+    if best["missing"]:
+        lines.append(f"Cần bổ sung/nhấn mạnh thêm: {', '.join(best['missing'][:5])}.")
+    lines.append("Cách cải thiện nhanh: viết 2-3 project theo mẫu: bài toán, công nghệ, phần bạn làm, kết quả định lượng.")
+    return "\n".join(lines)
+
+
+def _ollama_interview_reply(user_msg, history, context, topic_start=None):
+    """Use local Ollama as interviewer when available; return None on failure."""
+    client = get_ollama_client()
+    ok, message = client.is_available(timeout=1)
+    if not ok:
+        app.logger.info("[interview_ollama] unavailable: %s", message)
+        return None
+
+    recent_history = _normalize_interview_history(history)[-8:]
+    transcript = "\n".join(
+        f"{item.get('role', 'unknown')}: {item.get('content', '')[:900]}"
+        for item in recent_history
+        if item.get('content')
+    )
+    if user_msg == "init_interview":
+        user_prompt = "Start the mock interview with a short greeting and the first tailored question."
+    else:
+        user_prompt = f"Candidate answer: {user_msg}"
+
+    system = (
+        "You are a pragmatic Vietnamese technical interviewer for a job matching app. "
+        "Interview one candidate for the target job. Respond mostly in Vietnamese, with short English terms only when useful. "
+        "Do not roleplay as the candidate. Do not answer your own question. "
+        "Each reply must have exactly three parts: "
+        "1) one brief acknowledgement or coaching comment, "
+        "2) one short assessment of the candidate's previous answer when available, "
+        "3) exactly one next interview question. "
+        "Keep the response under 140 words. Ask practical questions tied to the candidate CV skills, target job, and missing skills. "
+        "If the answer is too short, ask the candidate to give a concrete STAR example with situation, action, result."
+    )
+
+    context_text = json.dumps(context, ensure_ascii=False)
+    messages = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                f"Interview context JSON:\n{context_text}\n\n"
+                f"Topic requested: {topic_start or 'auto'}\n"
+                f"Recent transcript:\n{transcript or '(empty)'}\n\n"
+                f"{user_prompt}"
+            ),
+        },
+    ]
+
+    try:
+        reply = client.chat(messages, timeout=45, temperature=0.25)
+    except Exception as exc:
+        app.logger.warning("[interview_ollama] chat failed: %s", exc)
+        return None
+
+    return reply.strip() if reply else None
+
 
 @app.route('/interview/chat', methods=['POST'])
 def interview_chat():
+    request_started_at = perf_counter()
     user_state = get_user_state()
     """Smart Bilingual AI Interview — analyzes user responses with NLP"""
     if user_state.get('cv_text') is None:
@@ -1437,6 +1849,7 @@ def interview_chat():
 
     # ── Analyze user's previous response ──
     analysis = _analyze_response(user_msg, user_skills) if user_msg != 'init_interview' else None
+    intent = _interview_user_intent(user_msg)
     
     # ── Check if response is too shallow (greeting, "ok", "yes", etc.) ──
     is_shallow = False
@@ -1448,6 +1861,60 @@ def interview_chat():
     effective_turn = turn_count
     if is_shallow and turn_count > 0:
         effective_turn = max(turn_count - 1, 0)  # Stay on current question
+
+    if intent != "interview":
+        if intent == "career_advice":
+            reply = _build_career_advisory_reply(user_state, user_msg)
+        else:
+            reply = _build_interview_advisory_reply(user_state, intent)
+        latency_ms = (perf_counter() - request_started_at) * 1000
+        app.logger.info(
+            "[interview_chat] latency_ms=%.2f source=advisory intent=%s turn=%s",
+            latency_ms,
+            intent,
+            turn_count + 1,
+        )
+        return jsonify({
+            'reply': reply,
+            'turn': turn_count + 1,
+            'total_turns': 10,
+            'analysis': analysis,
+            'source': 'advisory',
+            'intent': intent,
+            'history_contract': {
+                'user_turn_requires_analysis': True,
+                'analysis_nullable': True
+            },
+            'shallow': False
+        })
+
+    interview_context = _build_interview_context(
+        user_state, target_job, user_role, user_skills, analysis, turn_count
+    )
+    ollama_reply = _ollama_interview_reply(
+        user_msg, history, interview_context, topic_start=topic_start
+    )
+    if ollama_reply:
+        latency_ms = (perf_counter() - request_started_at) * 1000
+        app.logger.info(
+            "[interview_chat] latency_ms=%.2f source=ollama shallow=%s turn=%s topic_start=%s",
+            latency_ms,
+            is_shallow,
+            turn_count + 1,
+            topic_start
+        )
+        return jsonify({
+            'reply': ollama_reply,
+            'turn': turn_count + 1,
+            'total_turns': 10,
+            'analysis': analysis,
+            'source': 'ollama',
+            'history_contract': {
+                'user_turn_requires_analysis': True,
+                'analysis_nullable': True
+            },
+            'shallow': is_shallow
+        })
     
     # ── Build reply ── 
     if turn_count == 0:
@@ -1540,6 +2007,7 @@ def interview_chat():
         'turn': turn_count + 1,
         'total_turns': 10,
         'analysis': analysis,
+        'source': 'rule_based',
         'history_contract': {
             'user_turn_requires_analysis': True,
             'analysis_nullable': True
@@ -1832,73 +2300,114 @@ def cv_data():
 def salary_estimate():
     """Estimate salary based on role, experience, and skills from DB"""
     data = request.json
-    role_query = data.get('role', '').lower()
+    role_query = data.get('role', '').lower().strip()
     exp_year = int(data.get('exp', 0))
-    location = data.get('location', '').lower()
+    location = data.get('location', '').lower().strip()
     skills = data.get('skills', [])
 
-    if app_state['df'] is None:
-        return jsonify({
-            'min': 1000 + (exp_year * 200),
-            'max': 1800 + (exp_year * 300),
-            'currency': 'USD (Est.)'
-        })
-
-    df = app_state['df']
-    mask_role = df['job_title'].str.lower().str.contains(role_query, na=False)
-    
-    if 'remote' in location:
-        mask_loc = df['location'].str.lower().str.contains('remote', na=False)
-    elif location:
-         mask_loc = df['location'].str.lower().str.contains(location, na=False)
-    else:
-        mask_loc = True
-
-    subset = df[mask_role & mask_loc]
-    if len(subset) < 3:
-        subset = df[mask_role]
-
-    if len(subset) == 0:
-        return jsonify({'min': 1000, 'max': 2000, 'currency': 'USD'})
-
-    salaries = []
-    import re
-    def parse_salary_str(s):
-        s = str(s).lower().strip()
-        if not s or 'thỏa thuận' in s: return None
-        is_usd = 'usd' in s or '$' in s
-        scale = 25000 if is_usd else 1000000 
-        nums = re.findall(r'(\d+[.,]?\d*)', s.replace('.', '').replace(',', ''))
-        nums = [float(n) for n in nums]
-        if not nums: return None
-        if len(nums) == 1:
-             val = nums[0] * scale
-             return (val, val)
-        elif len(nums) >= 2:
-             v1 = nums[0] * scale
-             v2 = nums[1] * scale
-             return (v1, v2)
-        return None
-
-    for s_str in subset['salary']:
-        parsed = parse_salary_str(s_str)
-        if parsed: salaries.append(parsed)
-            
-    if not salaries:
-         return jsonify({'min': 1200, 'max': 2400, 'currency': 'USD'})
-
-    mins = [s[0] for s in salaries]
-    maxs = [s[1] for s in salaries]
-    
-    avg_min = np.mean(mins)
-    avg_max = np.mean(maxs)
-    
     # Experience Multiplier
     exp_multiplier = 0.7 + (exp_year * 0.1) # 10% increase per year
     exp_multiplier = min(max(exp_multiplier, 0.7), 2.5)
     
     # Skills Bonus (5% per selected skill, max 20%)
     skill_bonus = 1.0 + (min(len(skills), 4) * 0.05)
+
+    if app_state['df'] is None:
+        return jsonify({
+            'min': int(1000 * exp_multiplier),
+            'max': int(1800 * exp_multiplier * skill_bonus),
+            'currency': 'USD (Est.)'
+        })
+
+    df = app_state['df']
+    
+    # Expand roles to cover Vietnamese and common equivalents
+    role_map = {
+        'software engineer': ['software', 'engineer', 'developer', 'lập trình', 'phần mềm', 'web', 'it', 'code', 'programmer'],
+        'data scientist': ['data', 'phân tích', 'analyst', 'ai', 'machine learning', 'khoa học dữ liệu'],
+        'product manager': ['product', 'pm', 'quản lý sản phẩm', 'project manager', 'dự án'],
+        'ux designer': ['design', 'thiết kế', 'ui', 'ux', 'mỹ thuật'],
+        'devops engineer': ['devops', 'hệ thống', 'system', 'cloud', 'aws', 'network', 'mạng', 'sysadmin']
+    }
+    keywords = role_map.get(role_query, [role_query])
+    
+    mask_role = pd.Series([False] * len(df), index=df.index)
+    for kw in keywords:
+        mask_role |= df['job_title'].str.lower().str.contains(kw, na=False)
+    
+    # Location Filter (matches api_search behavior)
+    loc_map = {
+        'ho chi minh city': 'hồ chí minh|hcm|tp. hcm|tphcm|sài gòn',
+        'hanoi': 'hà nội|hanoi|hn',
+        'da nang': 'đà nẵng|đà nẵng|dn',
+        'remote': 'remote|từ xa|work from home|wfh'
+    }
+    if location and location != 'all locations':
+        pattern = loc_map.get(location, location)
+        mask_loc = df['location'].str.lower().str.contains(pattern, na=False, regex=True)
+    else:
+        mask_loc = pd.Series([True] * len(df), index=df.index)
+
+    subset = df[mask_role & mask_loc]
+    if len(subset) < 3:
+        subset = df[mask_role]
+
+    salaries = []
+    import re
+    def parse_salary_str(s):
+        s = str(s).lower().strip()
+        if not s or 'thỏa thuận' in s or 'thoả thuận' in s: 
+            return None
+        is_usd = 'usd' in s or '$' in s
+        is_jpy = 'jpy' in s or '¥' in s
+        s_clean = s.replace('.', '').replace(',', '')
+        nums = re.findall(r'(\d+)', s_clean)
+        nums = [float(n) for n in nums]
+        if not nums: 
+            return None
+        converted_nums = []
+        for n in nums:
+            if is_usd:
+                val = n * 25000
+            elif is_jpy:
+                val = n * 160
+            else:
+                if n >= 100000:
+                    val = n
+                elif 100 <= n < 100000:
+                    if n < 5000:
+                        val = n * 25000
+                    else:
+                        val = n
+                else:
+                    val = n * 1000000
+            converted_nums.append(val)
+        if len(converted_nums) == 1:
+            return (converted_nums[0], converted_nums[0])
+        elif len(converted_nums) >= 2:
+            return (converted_nums[0], converted_nums[1])
+        return None
+
+    for s_str in subset['salary']:
+        parsed = parse_salary_str(s_str)
+        if parsed: 
+            salaries.append(parsed)
+            
+    # Fallback to entire dataset averages if no role-specific salaries found
+    if not salaries:
+        for s_str in df['salary']:
+            parsed = parse_salary_str(s_str)
+            if parsed:
+                salaries.append(parsed)
+                
+    if not salaries:
+        avg_min = 1200 * 25000
+        avg_max = 2200 * 25000
+    else:
+        mins = [s[0] for s in salaries]
+        maxs = [s[1] for s in salaries]
+        avg_min = np.mean(mins)
+        avg_max = np.mean(maxs)
     
     final_min = (avg_min * exp_multiplier) / 25000
     final_max = (avg_max * exp_multiplier * skill_bonus) / 25000
@@ -2186,8 +2695,8 @@ def init_application():
             print("[INFO] Embedding job texts...", flush=True)
             X_dense = tfidf.encode(texts, show_progress_bar=False)
             X = normalize(X_dense)
-        except ImportError:
-            print("[WARN] sentence-transformers not installed. Falling back to TF-IDF.", flush=True)
+        except Exception as e:
+            print(f"[WARN] Failed to load SentenceTransformer ({e}). Falling back to TF-IDF.", flush=True)
             tfidf = TfidfVectorizer(
                 analyzer="char_wb", ngram_range=(3, 5),
                 min_df=1, max_df=1.0, max_features=12000,

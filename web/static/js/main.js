@@ -7,12 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setupUploadForm();
     setupSearch();
     checkSystemStatus(); // New initialization check
+    checkAuthStatus();   // Sync real auth status with backend on load
     loadDashboardMockData();
-
-    // Check local storage for auth state
-    if (sessionStorage.getItem('isLoggedIn') === 'true') {
-        setAuthState(true);
-    }
 
     // Init Theme
     initTheme();
@@ -84,65 +80,237 @@ function updateCV() {
 
 // Inner Tabs Removed - now top level pages
 
-/* --- Authentication Mock --- */
-function handleLogin(e) {
+/* --- Real Authentication Integration --- */
+async function handleLogin(e) {
     e.preventDefault();
-    processAuth(e.target, 'Welcome back!', 'You have successfully logged in.');
-}
-
-function handleRegister(e) {
-    e.preventDefault();
-    processAuth(e.target, 'Account Created!', 'Your account has been created successfully.');
-}
-
-function processAuth(form, title, message) {
-    // Simulate API call
+    const form = e.target;
+    const email = form.querySelector('input[name="email"]').value;
+    const password = form.querySelector('input[name="password"]').value;
+    
     const btn = form.querySelector('button[type="submit"]');
     const originalText = btn.innerHTML;
+    btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
-    setTimeout(() => {
-        setAuthState(true);
-        // Hide all auth modals
-        const loginModalEl = document.getElementById('loginModal');
-        const registerModalEl = document.getElementById('registerModal');
+    try {
+        const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await response.json();
 
-        if (loginModalEl) {
-            const modal = bootstrap.Modal.getInstance(loginModalEl);
-            if (modal) modal.hide();
+        if (response.ok && data.success) {
+            // Hide modal
+            const loginModalEl = document.getElementById('loginModal');
+            if (loginModalEl) {
+                const modal = bootstrap.Modal.getInstance(loginModalEl);
+                if (modal) modal.hide();
+            }
+            showToast('Welcome back!', 'You have successfully logged in.', 'success');
+            await checkAuthStatus();
+            window.location.href = '/dashboard';
+        } else {
+            showToast('Login Failed', data.error || 'Invalid credentials.', 'danger');
         }
-        if (registerModalEl) {
-            const modal = bootstrap.Modal.getInstance(registerModalEl);
-            if (modal) modal.hide();
-        }
-
+    } catch (error) {
+        showToast('Error', 'Unable to connect to server.', 'danger');
+    } finally {
+        btn.disabled = false;
         btn.innerHTML = originalText;
-        showToast(title, message, 'success');
-        btn.innerHTML = originalText;
-        showToast(title, message, 'success');
-        window.location.href = '/dashboard';
-    }, 1000);
+    }
 }
 
-function logout() {
-    setAuthState(false);
-    window.location.href = '/upload_page'; // Redirect to upload
-    showToast('Logged out', 'See you next time!', 'info');
+async function handleRegister(e) {
+    e.preventDefault();
+    const form = e.target;
+    const name = form.querySelector('input[name="name"]').value;
+    const email = form.querySelector('input[name="email"]').value;
+    const password = form.querySelector('input[name="password"]').value;
+    const confirmPassword = form.querySelector('input[name="confirm_password"]').value;
+
+    if (password !== confirmPassword) {
+        showToast('Validation Error', 'Passwords do not match.', 'danger');
+        return;
+    }
+
+    const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // Hide modal
+            const registerModalEl = document.getElementById('registerModal');
+            if (registerModalEl) {
+                const modal = bootstrap.Modal.getInstance(registerModalEl);
+                if (modal) modal.hide();
+            }
+            showToast('Account Created!', 'Your account has been created successfully.', 'success');
+            await checkAuthStatus();
+            window.location.href = '/dashboard';
+        } else {
+            showToast('Registration Failed', data.error || 'Could not register account.', 'danger');
+        }
+    } catch (error) {
+        showToast('Error', 'Unable to connect to server.', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
 }
 
-function setAuthState(isLoggedIn) {
+async function handleForgotPassword(e) {
+    e.preventDefault();
+    const form = e.target;
+    const email = form.querySelector('input[name="email"]').value;
+    const resultDiv = document.getElementById('forgotPasswordResult');
+    
+    const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const response = await fetch('/api/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            resultDiv.className = "small mt-3 text-start text-success";
+            resultDiv.innerHTML = `<strong>Success!</strong> Reset token generated:<br><code class="d-block p-2 bg-light border mt-1">${data.reset_token}</code><br>Copy this token and use it to reset your password.`;
+            showToast('Token Generated', 'Please copy the reset token displayed below.', 'success');
+        } else {
+            resultDiv.className = "small mt-3 text-start text-danger";
+            resultDiv.textContent = data.error || 'Failed to generate reset token.';
+            showToast('Error', data.error || 'Failed to generate token.', 'danger');
+        }
+    } catch (error) {
+        resultDiv.className = "small mt-3 text-start text-danger";
+        resultDiv.textContent = 'Unable to connect to server.';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+    return false;
+}
+
+async function handleResetPassword(e) {
+    e.preventDefault();
+    const form = e.target;
+    const token = form.querySelector('input[name="token"]').value;
+    const new_password = form.querySelector('input[name="new_password"]').value;
+    const resultDiv = document.getElementById('resetPasswordResult');
+
+    const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const response = await fetch('/api/reset-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, new_password })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            resultDiv.className = "small mt-3 text-start text-success";
+            resultDiv.textContent = 'Password updated successfully! You can now log in.';
+            showToast('Password Updated', 'You can now log in with your new password.', 'success');
+            setTimeout(() => {
+                const modalEl = document.getElementById('resetPasswordModal');
+                if (modalEl) {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) modal.hide();
+                }
+                const loginModalEl = document.getElementById('loginModal');
+                if (loginModalEl) {
+                    const modal = new bootstrap.Modal(loginModalEl);
+                    modal.show();
+                }
+            }, 2000);
+        } else {
+            resultDiv.className = "small mt-3 text-start text-danger";
+            resultDiv.textContent = data.error || 'Failed to reset password.';
+            showToast('Error', data.error || 'Failed to reset password.', 'danger');
+        }
+    } catch (error) {
+        resultDiv.className = "small mt-3 text-start text-danger";
+        resultDiv.textContent = 'Unable to connect to server.';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+    return false;
+}
+
+async function logout() {
+    try {
+        const response = await fetch('/api/logout', { method: 'POST' });
+        if (response.ok) {
+            setAuthState(false, null);
+            showToast('Logged out', 'See you next time!', 'info');
+            window.location.href = '/upload_page';
+        }
+    } catch (error) {
+        setAuthState(false, null);
+        window.location.href = '/upload_page';
+    }
+}
+
+async function checkAuthStatus() {
+    try {
+        const response = await fetch('/api/auth-status');
+        const data = await response.json();
+        if (data.logged_in) {
+            setAuthState(true, data.user);
+        } else {
+            setAuthState(false, null);
+        }
+    } catch (error) {
+        console.error('Failed to fetch auth status:', error);
+    }
+}
+
+function setAuthState(isLoggedIn, user = null) {
     const authButtons = document.getElementById('authButtons');
     const userProfile = document.getElementById('userProfile');
 
-    if (isLoggedIn) {
+    if (isLoggedIn && user) {
         sessionStorage.setItem('isLoggedIn', 'true');
-        authButtons.classList.add('d-none');
-        userProfile.classList.remove('d-none');
+        if (authButtons) authButtons.classList.add('d-none');
+        if (userProfile) {
+            userProfile.classList.remove('d-none');
+            const avatarEl = userProfile.querySelector('.user-avatar-display');
+            const nameEl = userProfile.querySelector('.user-name-display');
+            if (avatarEl) avatarEl.textContent = getInitials(user.name);
+            if (nameEl) nameEl.textContent = user.name;
+        }
     } else {
         sessionStorage.removeItem('isLoggedIn');
-        authButtons.classList.remove('d-none');
-        userProfile.classList.add('d-none');
+        if (authButtons) authButtons.classList.remove('d-none');
+        if (userProfile) userProfile.classList.add('d-none');
     }
+}
+
+function getInitials(name) {
+    if (!name) return 'U';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 async function checkSystemStatus() {

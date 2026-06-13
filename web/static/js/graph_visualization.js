@@ -128,6 +128,11 @@ async function initializeGraph(force = false) {
         }
 
         // ── Process nodes ──
+        const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+        const defaultFontColor = isDarkMode ? '#cbd5e1' : '#333333';
+        const userFontColor = '#ffffff';
+        const jobFontColor = isDarkMode ? '#f8fafc' : '#000000';
+
         const visNodes = data.nodes.map(node => {
             const nodeType = node.ntype || "Other";
             let color = node.color || NODE_COLOR_MAP[nodeType] || "#E0E0E0";
@@ -156,8 +161,8 @@ async function initializeGraph(force = false) {
                 y: -node.y * SCALE,
                 fixed: { x: true, y: true },
                 font: {
-                    // Job titles: always black text per request. Node background remains heatmap-driven.
-                    color: nodeType === 'User' ? '#ffffff' : (nodeType === 'JobPosting' ? '#000000' : '#333333'),
+                    // Node labels: always color appropriate to theme (white/light grey in dark mode).
+                    color: nodeType === 'User' ? userFontColor : (nodeType === 'JobPosting' ? jobFontColor : defaultFontColor),
                     face: 'Arial',
                     background: 'transparent',
                     strokeWidth: 0,
@@ -193,18 +198,18 @@ async function initializeGraph(force = false) {
             }
 
             // Style per edge type
-            let color = '#aaa';
+            let color = isDarkMode ? '#4b5563' : '#aaa';
             let width = 1;
             let fontSize = 9;
             let dashes = [5, 5];  // default: thin dashed
 
             if (edge.rel === 'MATCHES_JOB') {
-                color = '#000';
+                color = isDarkMode ? '#60a5fa' : '#000';
                 width = 5;
                 fontSize = 12;
                 dashes = false;           // solid thick
             } else if (edge.rel === 'SIMILAR_TO') {
-                color = '#555';
+                color = isDarkMode ? '#94a3b8' : '#555';
                 width = 3;
                 fontSize = 11;
                 dashes = false;           // solid medium
@@ -215,7 +220,7 @@ async function initializeGraph(force = false) {
                 dashes = [3, 3];
             } else {
                 // All other relationships: thin dashed grey
-                color = '#999';
+                color = isDarkMode ? '#374151' : '#999';
                 width = 1.2;
                 fontSize = 9;
                 dashes = [5, 5];
@@ -229,9 +234,9 @@ async function initializeGraph(force = false) {
                 font: {
                     align: 'middle',
                     size: fontSize,
-                    color: '#333',
+                    color: isDarkMode ? '#cbd5e1' : '#333',
                     face: 'Arial',
-                    background: '#ffffff',
+                    background: isDarkMode ? '#1e2937' : '#ffffff',
                     strokeWidth: 0
                 },
                 color: { color: color, highlight: '#e53935' },
@@ -277,7 +282,7 @@ async function initializeGraph(force = false) {
                 shadow: false,
                 font: {
                     strokeWidth: 0,
-                    background: '#ffffff'
+                    background: isDarkMode ? '#1e2937' : '#ffffff'
                 }
             }
         };

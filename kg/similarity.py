@@ -24,7 +24,11 @@ def text_sim_job_job(j1, j2, IDX, X):
     if j1 not in IDX or j2 not in IDX:
         return 0.0
     i, j = IDX[j1], IDX[j2]
-    return float(X[i].multiply(X[j]).sum())
+    xi = X[i]
+    xj = X[j]
+    if hasattr(xi, 'multiply'):
+        return float(xi.multiply(xj).sum())
+    return float(np.dot(xi, xj))
 
 def sim_score_job_job(j1, j2, job_info, IDX, X):
     """Calculate similarity score between two jobs (from collab.py logic)"""
@@ -91,7 +95,8 @@ def build_job_job_similar_edges(G, valid_job_nodes, job_info, IDX, X):
             continue
             
         v = X[a_idx]
-        sims = (v @ X.T).toarray().ravel()
+        sims = v @ X.T
+        sims = np.asarray(sims).ravel()
         sims[a_idx] = 0.0
 
         # Get top candidates

@@ -103,6 +103,11 @@
     color: var(--text-color) !important;
 }
 
+[data-theme="dark"] .text-muted,
+.dark-mode .text-muted {
+    color: var(--text-muted) !important;
+}
+
 [data-theme="dark"] .bg-light,
 [data-theme="dark"] .bg-white,
 [data-theme="dark"] .job-card,
@@ -329,6 +334,42 @@
     background: #020617 !important;
 }
 
+/* Upload Area Dark Mode */
+[data-theme="dark"] .upload-area,
+.dark-mode .upload-area {
+    background-color: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] .upload-area:hover,
+[data-theme="dark"] .upload-area.dragover,
+.dark-mode .upload-area:hover,
+.dark-mode .upload-area.dragover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    border-color: var(--primary-color) !important;
+}
+
+[data-theme="dark"] .upload-area-premium,
+.dark-mode .upload-area-premium {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .upload-area-premium:hover,
+[data-theme="dark"] .upload-area-premium.dragover,
+.dark-mode .upload-area-premium:hover,
+.dark-mode .upload-area-premium.dragover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: var(--primary-color, #2563eb) !important;
+}
+
+/* Graph Container Dark Mode */
+[data-theme="dark"] #graph-container,
+.dark-mode #graph-container {
+    background-color: var(--bg-body) !important;
+    border-color: var(--border-color) !important;
+}
+
 /* CV Builder Template Dark Mode Overrides */
 [data-theme="dark"] .cv-template,
 .dark-mode .cv-template {
@@ -410,6 +451,16 @@ body {
     color: var(--primary-color);
     /* Fallback */
     display: inline-block;
+}
+
+.salary-result-card {
+    background: var(--gradient-primary) !important;
+}
+
+[data-theme="dark"] .salary-result-card,
+.dark-mode .salary-result-card {
+    background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%) !important;
+    border: 1px solid var(--border-color) !important;
 }
 
 .premium-salary-value {
@@ -1374,7 +1425,7 @@ body {
 }
 
 [data-theme="dark"] .premium-logo-container {
-    background: #1e293b;
+    background: #1e293b !important;
 }
 
 [data-theme="dark"] .match-score-circle::after {

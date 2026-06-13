@@ -388,21 +388,31 @@ def train_lambdamart(labeled_data=None, labeled_path=None,
     # For LambdaMART, we need query groups
     # In our case, all samples belong to the same query (single CV)
     # For multi-CV training, we'd group by CV
+    # Check if we have multiple queries for group-aware split
+    has_multiple_queries = "query_id" in df.columns and df["query_id"].nunique() > 1
+    
     if "query_id" in df.columns:
         groups = df.groupby("query_id").size().values
     else:
         # Single query group
         groups = np.array([len(X)])
     
-    # Train/validation split (80/20 within each query)
-    from sklearn.model_selection import train_test_split
-    
-    if len(X) >= 20:
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
-        train_groups = np.array([len(X_train)])
-        val_groups = np.array([len(X_val)])
+    # Split only if we have multiple queries to avoid single-query early stopping issues
+    if has_multiple_queries and len(X) >= 20:
+        # Group-aware train/validation split (ensures queries don't leak)
+        unique_queries = df["query_id"].unique()
+        from sklearn.model_selection import train_test_split
+        train_q, val_q = train_test_split(unique_queries, test_size=0.2, random_state=42)
+        
+        # Build indices
+        train_idx = df[df["query_id"].isin(train_q)].index
+        val_idx = df[df["query_id"].isin(val_q)].index
+        
+        X_train, y_train = X[train_idx], y[train_idx]
+        X_val, y_val = X[val_idx], y[val_idx]
+        
+        train_groups = df[df["query_id"].isin(train_q)].groupby("query_id").size().values
+        val_groups = df[df["query_id"].isin(val_q)].groupby("query_id").size().values
         
         train_set = lgb.Dataset(X_train, label=y_train, group=train_groups,
                                 feature_name=available_features)
@@ -411,6 +421,7 @@ def train_lambdamart(labeled_data=None, labeled_path=None,
         eval_sets = [val_set]
         eval_names = ["valid"]
     else:
+        # Train on the entire dataset for single-query setups (prevents underfitting/early stopping at 2 trees)
         train_set = lgb.Dataset(X, label=y, group=groups,
                                 feature_name=available_features)
         eval_sets = []

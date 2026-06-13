@@ -3,8 +3,21 @@
 
 # USER–JOB MATCHING
 TOPK_USER_JOB = 3
-W_SKILL = 0.78
-W_LOC = 0.22
+# Default scoring weights (tunable)
+# Prefer tuning weights here rather than changing code.
+W_SKILL = 0.40
+W_ROLE = 0.25
+W_EXP = 0.10
+W_LOC = 0.10
+W_TEXT = 0.15
+W_SAL = 0.00
+
+# Whether to use LambdaMART (learned weights) or Fixed linear weights (heuristics)
+USE_LAMBDAMART = False
+
+# Penalty applied when CV/domain and job/domain differ (0.0-1.0)
+# Lower values make domain mismatch harsher; higher values relax penalty.
+DOMAIN_MISMATCH_PENALTY = 0.80
 
 SIM_THRESHOLD = 0.45
 CANDIDATES_TOP = 15
@@ -26,7 +39,7 @@ OCR_MAX_PAGES = 99
 FORCE_OCR = True
 
 # Prob skill
-MIN_KEEP_PROB = 0.08
+MIN_KEEP_PROB = 0.05
 
 # DOMAIN-BASED SKILL LEXICON
 DOMAIN_SKILL_LEXICON = {

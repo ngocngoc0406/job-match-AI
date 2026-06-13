@@ -1,6 +1,10 @@
 from utils.text_processing import norm_text, role_sim, exp_sim, location_match_score
 from scoring.xai import explain_user_job
 from scoring.skill_variants import detect_domain
+from config import (
+    W_SKILL, W_ROLE, W_EXP, W_LOC, W_TEXT, W_SAL,
+    DOMAIN_MISMATCH_PENALTY, USE_LAMBDAMART
+)
 import numpy as np
 
 # ─── LambdaMART Integration ──────────────────────────────────────────────────
@@ -89,7 +93,7 @@ def user_job_score(user_prob, user_city, user_detail, job_node, job_info,
     # ─── Score calculation ────────────────────────────────────────────────
     scoring_method = "fixed"
     
-    if _LAMBDAMART_MODEL is not None:
+    if USE_LAMBDAMART and _LAMBDAMART_MODEL is not None:
         # Use LambdaMART learned model
         try:
             from scoring.weight_learner import extract_features, predict_score
@@ -108,14 +112,14 @@ def user_job_score(user_prob, user_city, user_detail, job_node, job_info,
             scoring_method = "fixed"
     
     if scoring_method == "fixed":
-        # Fixed linear weights (original method)
+        # Fixed linear weights (configurable via `config.py`)
         W = {
-            'skill': 0.40,
-            'role': 0.20,
-            'exp': 0.15,
-            'location': 0.15,
-            'text': 0.10,
-            'sal': 0.00,
+            'skill': W_SKILL,
+            'text': W_TEXT,
+            'location': W_LOC,
+            'role': W_ROLE,
+            'exp': W_EXP,
+            'sal': W_SAL,
         }
 
         score = (
@@ -128,9 +132,8 @@ def user_job_score(user_prob, user_city, user_detail, job_node, job_info,
         )
 
         # Domain Filtering logic (only for fixed weights — LambdaMART handles this via features)
-        if cv_domain != "general" and job_domain != "general":
-            if cv_domain != job_domain:
-                score *= 0.60
+        if cv_domain != "general" and cv_domain != job_domain:
+            score *= float(DOMAIN_MISMATCH_PENALTY)
 
     explain = {
         "components": {

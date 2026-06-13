@@ -1,0 +1,11 @@
+.venv/
+.venv]/
+__pycache__/
+*.pyc
+.git/
+.vscode/
+.gemini/
+uploads/*
+*.xlsx
+# But keep merged_jobs.xlsx since it is needed by init_application
+!merged_jobs.xlsx

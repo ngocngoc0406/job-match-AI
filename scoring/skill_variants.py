@@ -125,7 +125,7 @@ def extract_skills_probabilistic(text: str, min_keep=MIN_KEEP_PROB):
         domain_skills = set(DOMAIN_SKILL_LEXICON.get(detected_dom, {}).keys())
         for s in domain_skills:
             if s in skills_prob:
-                skills_prob[s] = round(max(skills_prob[s], 0.75), 3)
+                skills_prob[s] = round(max(skills_prob[s], 0.65), 3)
         
         # 3. Suppress/Filter skills from other domains if not explicitly high-probability
         for s in list(skills_prob.keys()):
@@ -166,7 +166,38 @@ def weighted_skill_overlap_prob(user_prob: dict, job_prob: dict):
     contrib.sort(key=lambda x: x[1], reverse=True)
     return float(round(score, 3)), {"top_skill_contrib": contrib[:10]}
 
-def add_skillraw_nodes_and_links(G, owner_n, text, owner_rel_raw, fuzzy_threshold=0.78, skip_fuzzy=False):
+def _edit_dist(s1, s2):
+    """Standard Levenshtein distance"""
+    if len(s1) < len(s2):
+        return _edit_dist(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+def _is_valid_fuzzy_match(phrase, canon):
+    """Check if the fuzzy match is a minor variant/typo (edit distance ratio <= 0.20)"""
+    aliases = SKILL_LEXICON.get(canon, [])
+    all_terms = [canon] + aliases
+    min_ratio = 1.0
+    for term in all_terms:
+        term_norm = norm_text(term)
+        d = _edit_dist(phrase, term_norm)
+        max_len = max(len(phrase), len(term_norm))
+        ratio = d / max_len if max_len > 0 else 1.0
+        if ratio < min_ratio:
+            min_ratio = ratio
+    return min_ratio <= 0.20
+
+def add_skillraw_nodes_and_links(G, owner_n, text, owner_rel_raw, fuzzy_threshold=0.65, skip_fuzzy=False):
     """Add skill raw nodes and links to graph"""
     text_n = norm_text(text)
     raw2can_map = defaultdict(list)
@@ -204,6 +235,10 @@ def add_skillraw_nodes_and_links(G, owner_n, text, owner_rel_raw, fuzzy_threshol
     
             canon, score = best_canonical_match(phrase)
             if canon and score >= fuzzy_threshold:
+                # Perform edit distance verification to filter out false positives
+                if not _is_valid_fuzzy_match(phrase, canon):
+                    continue
+
                 raw_n = f"skillraw::{sid('raw', phrase)}"
                 can_n = f"skill::{sid('skill', canon)}"
     

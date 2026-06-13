@@ -18,7 +18,7 @@
     }
 
     .job-detail-card {
-        background: var(--card-bg, #ffffff);
+        background: var(--bg-card, #ffffff);
         border-radius: 1.5rem;
         box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.1), 0 10px 15px -10px rgba(0, 0, 0, 0.1);
         border: 1px solid var(--border-color, rgba(0,0,0,0.05));
@@ -47,7 +47,7 @@
         position: absolute;
         width: 100px;
         height: 100px;
-        background: var(--card-bg, #ffffff);
+        background: var(--bg-card, #ffffff);
         border-radius: 50%;
     }
 
@@ -302,7 +302,7 @@
                     </div>
                     
                     <div class="d-flex flex-column align-items-center mb-4">
-                        <div id="scoreCircle" class="score-circle mb-3">
+                        <div id="scoreCircle" class="score-circle mb-3" data-score="{{ (job.score * 100) | round | int }}">
                             <span id="scoreValue" class="score-value">0%</span>
                         </div>
                         <span class="fw-bold text-muted">Matching Confidence</span>
@@ -319,7 +319,7 @@
                             <span class="fw-bold text-primary">{{ job.skill_coverage }}</span>
                         </div>
                         <div class="progress" style="height: 8px; background: rgba(0,0,0,0.05); border-radius: 4px;">
-                            <div class="progress-bar bg-primary" style="width: 0%; transition: width 1.5s ease-out; border-radius: 4px;" id="skillProgress"></div>
+                            <div class="progress-bar bg-primary" style="width: 0%; transition: width 1.5s ease-out; border-radius: 4px;" id="skillProgress" data-coverage="{{ job.skill_coverage }}"></div>
                         </div>
                     </div>
 
@@ -407,8 +407,8 @@ async function toggleCVPanel() {
 
 document.addEventListener('DOMContentLoaded', () => {
     // Animate Score Circle
-    const targetScore = {{ (job.score * 100) | round | int }};
     const circle = document.getElementById('scoreCircle');
+    const targetScore = Number(circle.dataset.score) || 0;
     const valueTxt = document.getElementById('scoreValue');
     const progress = document.getElementById('skillProgress');
     
@@ -416,7 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
         circle.style.background = `conic-gradient(#10b981 ${targetScore * 3.6}deg, var(--score-track) 0)`;
         valueTxt.innerText = targetScore + '%';
         valueTxt.classList.add('show');
-        progress.style.width = '{{ job.skill_coverage }}';
+        progress.style.width = progress.dataset.coverage || '0%';
     }, 300);
 });
 
