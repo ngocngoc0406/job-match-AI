@@ -824,7 +824,11 @@ def _get_job_detail_data(job_id):
                 cv_vec = user_state.get('cv_vec')
                 if cv_vec is None and user_state.get('cv_text'):
                     # Reconstruct vector if session was restored from DB
-                    cv_vec = normalize(app_state['tfidf'].transform([norm_text(user_state['cv_text'])]))
+                    tfidf_obj = app_state['tfidf']
+                    if hasattr(tfidf_obj, 'encode'):
+                        cv_vec = normalize(tfidf_obj.encode([norm_text(user_state['cv_text'])]))
+                    else:
+                        cv_vec = normalize(tfidf_obj.transform([norm_text(user_state['cv_text'])]))
                 
                 if cv_vec is not None:
                     sc, ex = user_job_score(
@@ -2688,15 +2692,11 @@ def init_application():
         valid_job_nodes = [j for j in job_nodes if j in job_info]
         texts = [job_info[j]["text"] for j in valid_job_nodes]
         
-        try:
-            from sentence_transformers import SentenceTransformer
-            print("[INFO] Loading SentenceTransformer model (this may take a moment)...", flush=True)
-            tfidf = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-            print("[INFO] Embedding job texts...", flush=True)
-            X_dense = tfidf.encode(texts, show_progress_bar=False)
-            X = normalize(X_dense)
-        except Exception as e:
-            print(f"[WARN] Failed to load SentenceTransformer ({e}). Falling back to TF-IDF.", flush=True)
+        # Check if running in a low-resource environment (like Render Free Tier with 512MB RAM)
+        is_low_resource = os.environ.get("RENDER") == "true" or os.environ.get("FORCE_TFIDF") == "true"
+        
+        if is_low_resource:
+            print("[INFO] Running in low-memory environment. Forcing TF-IDF matching instead of SentenceTransformers...", flush=True)
             tfidf = TfidfVectorizer(
                 analyzer="char_wb", ngram_range=(3, 5),
                 min_df=1, max_df=1.0, max_features=12000,
@@ -2704,6 +2704,23 @@ def init_application():
             )
             X = tfidf.fit_transform(texts)
             X = normalize(X)
+        else:
+            try:
+                from sentence_transformers import SentenceTransformer
+                print("[INFO] Loading SentenceTransformer model (this may take a moment)...", flush=True)
+                tfidf = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                print("[INFO] Embedding job texts...", flush=True)
+                X_dense = tfidf.encode(texts, show_progress_bar=False)
+                X = normalize(X_dense)
+            except Exception as e:
+                print(f"[WARN] Failed to load SentenceTransformer ({e}). Falling back to TF-IDF.", flush=True)
+                tfidf = TfidfVectorizer(
+                    analyzer="char_wb", ngram_range=(3, 5),
+                    min_df=1, max_df=1.0, max_features=12000,
+                    sublinear_tf=True, lowercase=True
+                )
+                X = tfidf.fit_transform(texts)
+                X = normalize(X)
         
         app_state['tfidf'] = tfidf
         app_state['X'] = X
