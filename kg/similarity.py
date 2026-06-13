@@ -96,6 +96,8 @@ def build_job_job_similar_edges(G, valid_job_nodes, job_info, IDX, X):
             
         v = X[a_idx]
         sims = v @ X.T
+        if hasattr(sims, 'toarray'):
+            sims = sims.toarray()
         sims = np.asarray(sims).ravel()
         sims[a_idx] = 0.0
 
