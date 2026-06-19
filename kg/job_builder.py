@@ -87,6 +87,7 @@ def build_job_nodes(G, df, job_info=None, rdf=None, ex_ns=None):
             add_edge(G, job_n, sk_n, "REQUIRES_SKILL", rdf=rdf, ex_ns=ex_ns, prob=p)
 
         job_info[job_n] = {
+            "job_id": str(jid),
             "title": title,
             "company": company,
             "url": str(r["job_url"]),
