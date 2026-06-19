@@ -2,17 +2,21 @@ import sqlite3
 import os
 import glob
 
-def run_migrations(db_path):
+def run_migrations(db_path, sql_dir=None):
     """
-    Runs all .sql migration files in the web/data directory.
+    Runs all .sql migration files in the given sql_dir (or the directory
+    containing db_path if sql_dir is not provided).
     Uses 'CREATE TABLE IF NOT EXISTS' style for simplicity.
     """
-    data_dir = os.path.dirname(db_path)
+    if sql_dir is None:
+        sql_dir = os.path.dirname(db_path)
+    # Ensure the directory containing the DB exists
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     # Find all .sql files and sort them by name (e.g., 000_..., 001_...)
-    sql_files = sorted(glob.glob(os.path.join(data_dir, "*.sql")))
+    sql_files = sorted(glob.glob(os.path.join(sql_dir, "*.sql")))
     
     if not sql_files:
-        print("No migration files found.")
+        print(f"No migration files found in {sql_dir}.")
         return
 
     print(f"Found {len(sql_files)} migration files.")

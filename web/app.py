@@ -42,17 +42,25 @@ from services.ollama_client import get_ollama_client
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'job-match-ai-dev-secret')
+_secret = os.environ.get('FLASK_SECRET_KEY') or os.environ.get('SECRET_KEY') or 'job-match-ai-dev-secret'
+app.config['SECRET_KEY'] = _secret
+app.secret_key = _secret  # Must be stable across restarts for sessions to persist
+
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
-
 import sqlite3
 import time
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'app.db')
+# Use Hugging Face Spaces persistent storage (/data) when available.
+# HF Spaces mounts persistent storage at /data; the container filesystem
+# at /app is ephemeral and wiped on every restart.
+_HF_PERSISTENT_DIR = '/data'
+if os.path.isdir(_HF_PERSISTENT_DIR) and os.environ.get('SPACE_ID'):
+    DB_PATH = os.path.join(_HF_PERSISTENT_DIR, 'app.db')
+else:
+    DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'app.db')
 
 def get_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -65,7 +73,11 @@ from web.migrations import run_migrations
 def init_db():
     # Always run migrations to ensure schema is up-to-date
     # Migrations should use 'IF NOT EXISTS'
-    run_migrations(DB_PATH)
+    print(f"[DB] Using database at: {DB_PATH}")
+    # Migration SQL files are always read from the source tree (web/data/*.sql),
+    # but the database itself may live in /data (HF persistent storage).
+    _migration_sql_dir = os.path.join(os.path.dirname(__file__), 'data')
+    run_migrations(DB_PATH, sql_dir=_migration_sql_dir)
 
 # Initialize DB on startup
 init_db() 
