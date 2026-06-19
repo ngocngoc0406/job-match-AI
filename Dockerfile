@@ -3,10 +3,8 @@ FROM python:3.10-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PORT=7860
-
-# Set the working directory in the container
-WORKDIR /app
+    PORT=7860 \
+    HOME=/home/user
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,14 +12,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container
-COPY requirements.txt .
+# Create a non-root user
+RUN useradd -m -u 1000 user
+WORKDIR /app
 
-# Install any needed packages specified in requirements.txt
+# Copy requirements and install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the current directory contents into the container at /app
-COPY . .
+# Copy application files and change ownership
+COPY --chown=user:user . .
+
+# Pre-create writable directories with correct ownership
+RUN mkdir -p uploads web/data models && chown -R user:user uploads web/data models
+
+# Switch to non-root user
+USER user
+ENV PATH="/home/user/.local/bin:$PATH"
 
 # Expose the port the app runs on (Hugging Face Spaces default is 7860)
 EXPOSE 7860
