@@ -195,13 +195,43 @@ def exp_bucket(miny, maxy):
     return "Exp_5_plus"
 
 def exp_sim(e1, e2):
-    """Calculate experience similarity"""
-    from config import EXP_NEAR
+    """Calculate experience similarity using an asymmetric hierarchical penalty.
+    e1 is the user's experience bucket (candidate), e2 is the job's experience bucket.
+    """
     if e1 == "Exp_Unknown" or e2 == "Exp_Unknown":
         return 0.0
     if e1 == e2:
         return 1.0
-    return EXP_NEAR.get((e1, e2), EXP_NEAR.get((e2, e1), 0.0))
+
+    # Map buckets to hierarchical levels (numerical order)
+    levels = {
+        "Exp_0_1": 1,      # Intern / Fresher / Entry
+        "Exp_1_3": 2,      # Junior
+        "Exp_3_5": 3,      # Mid / Senior
+        "Exp_5_plus": 4    # Lead / Expert / Principal
+    }
+
+    u_level = levels.get(e1, 0)
+    j_level = levels.get(e2, 0)
+
+    if u_level == 0 or j_level == 0:
+        return 0.0
+
+    # diff = u_level - j_level
+    # > 0: Overqualified (Candidate has more experience than job requires)
+    # < 0: Underqualified (Candidate has less experience than job requires)
+    diff = u_level - j_level
+
+    if diff > 0:
+        # Overqualified: candidate > job
+        if diff == 1:
+            return 0.7  # 1 level higher (e.g., Senior -> Junior)
+        return 0.4      # 2+ levels higher
+    else:
+        # Underqualified: candidate < job
+        if diff == -1:
+            return 0.2  # 1 level lower (e.g., Junior -> Senior) - harsh penalty
+        return 0.0      # 2+ levels lower (e.g., Intern -> Lead) - zero compatibility
 
 # SALARY PARSING
 def parse_salary_vnd(text):
