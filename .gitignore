@@ -78,6 +78,8 @@ checkpoints/
 kg/*.json
 kg/*.db
 kg/*.sqlite
+web/data/*.db
+web/data/*.sqlite
 
 # ─── Logs ─────────────────────────────────────────────────
 *.log
