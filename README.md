@@ -1,11 +1,13 @@
 ---
-title: Job Match AI
-emoji: 💼
+title: Web
+emoji: 🔥
 colorFrom: blue
-colorTo: indigo
+colorTo: gray
 sdk: docker
 app_port: 7860
 pinned: false
+license: other
+short_description: đatn
 ---
 
 # NCKH Job Matching System
@@ -43,3 +45,5 @@ pinned: false
 - **Module not found**: Run `pip install -r requirements.txt`
 
 Server ready at http://127.0.0.1:5000
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
