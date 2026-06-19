@@ -858,7 +858,7 @@ def _get_job_detail_data(job_id):
                 if isinstance(p, (int, float))
             }
         else:
-            user_prob_max_raw = user_state.get('user_prob', {})
+            user_prob_max_raw = user_state.get('user_prob') or {}
 
         xai = explain_user_job(user_prob_max_raw, job_prob, 
                               user_raw2can=user_state.get('user_raw2can_map'), 
