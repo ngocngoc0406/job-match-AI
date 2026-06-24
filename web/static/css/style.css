@@ -509,6 +509,7 @@ body {
     border-bottom: 1px solid var(--border-color);
     padding: 0.75rem 0;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1030;
 }
 
 .navbar-brand {
@@ -581,6 +582,7 @@ body {
     padding: 0.75rem;
     backdrop-filter: blur(20px);
     background: var(--glass-bg);
+    z-index: 1050;
 }
 
 .dropdown-item {
@@ -664,6 +666,8 @@ body {
     padding: 0 2rem;
     width: 100%;
     flex: 1;
+    position: relative;
+    z-index: 1;
 }
 
 /* CV Builder specific */
